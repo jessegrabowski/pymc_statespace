@@ -1,10 +1,9 @@
-import aesara
 import aesara.tensor as at
 import numpy as np
 from numpy.typing import ArrayLike
 from typing import Optional, Tuple, List, Type
 
-from kalman_filter import KalmanFilter
+from pymc_statespace.filters.kalman_filter import KalmanFilter
 
 KeyLike = Tuple[str | int] | str
 
@@ -93,7 +92,7 @@ class AesaraRepresentation:
             'selection': (self.k_states, self.k_posdef, 1),
             'state_cov': (self.k_posdef, self.k_posdef, 1),
             'initial_state': (self.k_states, 1, 1),
-            'initial_state_cov': (self.k_posdef, self.k_posdef, 1)
+            'initial_state_cov': (self.k_states, self.k_states, 1)
         }
 
         # Initialize the representation matrices

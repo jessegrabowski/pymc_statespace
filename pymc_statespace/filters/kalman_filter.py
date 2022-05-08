@@ -11,6 +11,8 @@ class KalmanFilter:
     def build_graph(self, data, a0, P0, Q, H, T, R, Z):
         """
         Construct the computation graph for the Kalman filter
+
+        TODO: Add a check for time-varying matrices (ndim > 2) and add matrices to scan sequences if so.
         """
 
         results, updates = aesara.scan(self._kalman_step,
@@ -31,8 +33,7 @@ class KalmanFilter:
         """
         Conjugate update rule for the mean and covariance matrix, with log-likelihood en passant
 
-        TODO: These equations are likely incorrect if there are multiple endogenous variables (VAR model) or
-              the state-space matrices are 3d tensors (time varying components)
+        TODO: Verify these equations are correct if there are multiple endogenous variables.
 
         TODO: Add handling for NA values
         """

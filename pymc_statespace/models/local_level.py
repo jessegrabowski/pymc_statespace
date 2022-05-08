@@ -1,4 +1,4 @@
-from statespace import AesaraRepresentation, PyMCStateSpace
+from pymc_statespace.core.statespace import AesaraRepresentation, PyMCStateSpace
 import numpy as np
 import aesara.tensor as at
 
