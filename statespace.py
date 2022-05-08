@@ -1,3 +1,4 @@
+import aesara
 import aesara.tensor as at
 import numpy as np
 from numpy.typing import ArrayLike
@@ -168,7 +169,7 @@ class AesaraRepresentation:
         else:
             raise IndexError('First index must the name of a valid state space matrix.')
 
-    def __setitem__(self, key: KeyLike, value: Tuple[float | int | ArrayLike]) -> None:
+    def __setitem__(self, key: KeyLike, value: float | int | ArrayLike) -> None:
         _type = type(key)
         # Case 1: key is a string: we are setting an entire matrix.
         if _type is str:
@@ -196,16 +197,17 @@ class PyMCStateSpace:
         self.n_obs, self.k_endog = data.shape
         self.k_states = k_states
         self.k_posdef = k_posdef
+
+        # All models contain a state space representation and a Kalman filter
+        self.ssm = AesaraRepresentation(data, k_states, k_posdef)
         self.kalman_filter = KalmanFilter()
 
         # Placeholders for the aesara functions that will return the predicted state, covariance, and log likelihood
         # given parameter vector theta
-        # TODO: Are gradients w.r.t y_hat and cov_hat useful/interesting?
-        self.f_loglike = None
-        self.f_loglike_grad = None
 
-        self.f_y_hat = None
-        self.f_cov_hat = None
+        self.log_likelihood = None
+        self.filtered_states = None
+        self.filtered_covarainces = None
 
     def unpack_statespace(self):
         a0 = self.ssm['initial_state']
@@ -218,8 +220,46 @@ class PyMCStateSpace:
 
         return a0, P0, Q, H, T, R, Z
 
-    def update(self):
+    def _clear_existing_graphs(self):
+        if self.log_likelihood is not None:
+            del self.log_likelihood
+            self.log_likelihood = None
+
+        if self.filtered_states is not None:
+            del self.filtered_states
+            self.filtered_states = None
+
+        if self.filtered_covarainces is not None:
+            del self.filtered_covarainces
+            self.filtered_covarainces = None
+
+    def update(self, theta: at.TensorVariable) -> None:
+        """
+        Put parameter values from vector theta into the correct positions in the state space matrices.
+        TODO: Can this be done using variable names to avoid the need to ravel and concatenate all RVs in the
+              PyMC model?
+
+        Parameters
+        ----------
+        theta: TensorVariable
+            Vector of all variables in the state space model
+        """
         raise NotImplementedError
 
-    def compile_aesara_functions(self):
-        raise NotImplementedError
+    def build_statespace_graph(self, theta: at.TensorVariable) -> None:
+        """
+        Given parameter vector theta, constructs the full computational graph describing the state space model.
+
+        Parameters
+        ----------
+        theta: TensorVariable
+            Symbolic tensor varaible representing all unknown parameters among all state space matrices in the model.
+        """
+
+        self._clear_existing_graphs()
+        self.update(theta)
+        states, covariances, log_likelihood = self.kalman_filter.build_graph(self.data, *self.unpack_statespace())
+
+        self.log_likelihood = log_likelihood
+        self.filtered_states = states
+        self.filtered_covarainces = covariances
