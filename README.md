@@ -4,25 +4,27 @@ A system for Bayesian estimation of state space models using PyMC 4.0. This pack
 ## State Space Models
 This package follows Statsmodels in using the Durbin and Koopman (2012) nomenclature for a linear state space model. Under this nomenclature, the model is written as:
 
-<p align="center"><img src="https://rawgit.com/jessegrabowski/pymc_statespace/main/svgs/536ec8a09411a7bf2f91219b52fc0924.svg?invert_in_darkmode" align=middle width=301.76022359999996pt height=65.753424pt/></p>
+<img src="svgs/4881244fda86ce9792cccafb3bb7eb0c.svg?invert_in_darkmode" align=middle width=258.9341501999999pt height=24.65753399999998pt/>
+<img src="svgs/17a925cbd243c9dd3ce20fd8558993f1.svg?invert_in_darkmode" align=middle width=293.57032319999996pt height=24.65753399999998pt/>
+<img src="svgs/f566e90ed17c5292db4600846e0ace27.svg?invert_in_darkmode" align=middle width=108.89074349999999pt height=24.65753399999998pt/>
 
 The objects in the above equation have the following shapes and meanings:
 
-- <img src="https://rawgit.com/jessegrabowski/pymc_statespace/main/svgs/d523a14b8179ebe46f0ed16895ee46f0.svg?invert_in_darkmode" align=middle width=57.733970249999985pt height=21.18721440000001pt/>, observation vector
-- <img src="https://rawgit.com/jessegrabowski/pymc_statespace/main/svgs/54221efbfb5e69569dfe8ddea785093a.svg?invert_in_darkmode" align=middle width=66.35271884999999pt height=21.18721440000001pt/>, state vector
-- <img src="https://rawgit.com/jessegrabowski/pymc_statespace/main/svgs/523b266d36c270dbbb5daf2c9092ce0f.svg?invert_in_darkmode" align=middle width=57.340042649999994pt height=21.18721440000001pt/>, observation noise vector
-- <img src="https://rawgit.com/jessegrabowski/pymc_statespace/main/svgs/17b59c002f249204f24e31507dc4957d.svg?invert_in_darkmode" align=middle width=57.43908884999998pt height=21.18721440000001pt/>, state innovation vector
+- <img src="svgs/d523a14b8179ebe46f0ed16895ee46f0.svg?invert_in_darkmode" align=middle width=57.733970249999985pt height=21.18721440000001pt/>, observation vector
+- <img src="svgs/54221efbfb5e69569dfe8ddea785093a.svg?invert_in_darkmode" align=middle width=66.35271884999999pt height=21.18721440000001pt/>, state vector
+- <img src="svgs/523b266d36c270dbbb5daf2c9092ce0f.svg?invert_in_darkmode" align=middle width=57.340042649999994pt height=21.18721440000001pt/>, observation noise vector
+- <img src="svgs/17b59c002f249204f24e31507dc4957d.svg?invert_in_darkmode" align=middle width=57.43908884999998pt height=21.18721440000001pt/>, state innovation vector
 
 
-- <img src="https://rawgit.com/jessegrabowski/pymc_statespace/main/svgs/ff25a8f22c7430ca572d33206c0a9176.svg?invert_in_darkmode" align=middle width=67.10991044999999pt height=22.465723500000017pt/>, the design matrix
-- <img src="https://rawgit.com/jessegrabowski/pymc_statespace/main/svgs/a06c0e58d4d162b0e87d32927c9812db.svg?invert_in_darkmode" align=middle width=63.39029894999998pt height=22.465723500000017pt/>, observation noise covariance matrix
-- <img src="https://rawgit.com/jessegrabowski/pymc_statespace/main/svgs/3b5e41543d7fc8cedf98ec609b343134.svg?invert_in_darkmode" align=middle width=71.65714874999999pt height=22.465723500000017pt/>, the transition matrix
-- <img src="https://rawgit.com/jessegrabowski/pymc_statespace/main/svgs/cac7e81ebde5e530e639eae5389f149e.svg?invert_in_darkmode" align=middle width=67.97229284999999pt height=22.465723500000017pt/>, the selection matrix
-- <img src="https://rawgit.com/jessegrabowski/pymc_statespace/main/svgs/edcff444fd5240add1c47d2de50ebd7e.svg?invert_in_darkmode" align=middle width=61.92609719999999pt height=22.465723500000017pt/>, the state innovation covariance matrix
+- <img src="svgs/ff25a8f22c7430ca572d33206c0a9176.svg?invert_in_darkmode" align=middle width=67.10991044999999pt height=22.465723500000017pt/>, the design matrix
+- <img src="svgs/a06c0e58d4d162b0e87d32927c9812db.svg?invert_in_darkmode" align=middle width=63.39029894999998pt height=22.465723500000017pt/>, observation noise covariance matrix
+- <img src="svgs/3b5e41543d7fc8cedf98ec609b343134.svg?invert_in_darkmode" align=middle width=71.65714874999999pt height=22.465723500000017pt/>, the transition matrix
+- <img src="svgs/cac7e81ebde5e530e639eae5389f149e.svg?invert_in_darkmode" align=middle width=67.97229284999999pt height=22.465723500000017pt/>, the selection matrix
+- <img src="svgs/edcff444fd5240add1c47d2de50ebd7e.svg?invert_in_darkmode" align=middle width=61.92609719999999pt height=22.465723500000017pt/>, the state innovation covariance matrix
 
 
-- <img src="https://rawgit.com/jessegrabowski/pymc_statespace/main/svgs/92b8c1194757fb3131cda468a34be85f.svg?invert_in_darkmode" align=middle width=62.950875899999986pt height=21.18721440000001pt/>, the state intercept vector
-- <img src="https://rawgit.com/jessegrabowski/pymc_statespace/main/svgs/a13d89295e999545a129b2d412e99f6d.svg?invert_in_darkmode" align=middle width=58.230501449999984pt height=22.831056599999986pt/>, the observation intercept vector
+- <img src="svgs/92b8c1194757fb3131cda468a34be85f.svg?invert_in_darkmode" align=middle width=62.950875899999986pt height=21.18721440000001pt/>, the state intercept vector
+- <img src="svgs/a13d89295e999545a129b2d412e99f6d.svg?invert_in_darkmode" align=middle width=58.230501449999984pt height=22.831056599999986pt/>, the observation intercept vector
 
 The linear state space model is a workhorse in many disciplines, and is flexible enough to represent a wide range of models, including Box-Jenkins SARIMAX class models, time series decompositions, and model of multiple time series (VARMAX) models. Use of a Kalman filter allows for estimation of unobserved and missing variables. Taken together, these are a powerful class of models that can be further augmented by Bayesian estimation. This allows the researcher to integrate uncertainty about the true model when estimating model parameteres.
 
