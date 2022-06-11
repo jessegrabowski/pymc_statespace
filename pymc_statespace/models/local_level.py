@@ -1,4 +1,4 @@
-from pymc_statespace.core.statespace import AesaraRepresentation, PyMCStateSpace
+from pymc_statespace.core.statespace import PyMCStateSpace
 import numpy as np
 import aesara.tensor as at
 
@@ -6,13 +6,9 @@ import aesara.tensor as at
 class BayesianLocalLevel(PyMCStateSpace):
 
     def __init__(self, data):
-        # Model order
         k_states = k_posdef = 2
 
         super().__init__(data, k_states, k_posdef)
-
-        # Initialize the statespace
-        self.ssm = AesaraRepresentation(data, k_states=k_states, k_posdef=k_posdef)
 
         # Initialize the matrices
         self.ssm['design'] = np.array([[1.0, 0.0]])
@@ -28,7 +24,9 @@ class BayesianLocalLevel(PyMCStateSpace):
         # Cache some indices
         self._state_cov_idx = ('state_cov',) + np.diag_indices(k_posdef)
 
-        self.ssm[self._state_cov_idx] = 1.0
+    @property
+    def param_names(self):
+        return ['x0', 'P0', 'sigma_obs', 'sigma_state']
 
     def update(self, theta: at.TensorVariable) -> None:
         """

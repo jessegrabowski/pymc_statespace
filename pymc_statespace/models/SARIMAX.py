@@ -1,4 +1,4 @@
-from pymc_statespace.core.statespace import AesaraRepresentation, PyMCStateSpace
+from pymc_statespace.core.statespace import PyMCStateSpace
 import numpy as np
 import aesara.tensor as at
 from typing import Tuple
@@ -17,9 +17,6 @@ class BayesianARMA(PyMCStateSpace):
         k_posdef = 1
 
         super().__init__(data, k_states, k_posdef)
-
-        # Initialize the statespace
-        self.ssm = AesaraRepresentation(data, k_states=k_states, k_posdef=k_posdef)
 
         # Initialize the matrices
         self.ssm['design'] = np.r_[[1.0], np.zeros(k_states-1)][None]

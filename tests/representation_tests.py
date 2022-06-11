@@ -1,5 +1,5 @@
 import unittest
-from pymc_statespace.core.statespace import AesaraRepresentation
+from pymc_statespace.core.representation import AesaraRepresentation
 import numpy as np
 
 
