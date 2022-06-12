@@ -213,7 +213,7 @@ class PyMCStateSpace:
             if posterior_samples > 1.0 or posterior_samples < 0.0:
                 raise ValueError('If posterior_samples is a float, it should be between 0 and 1, representing the '
                                  'fraction of total posterior samples to re-sample.')
-            posterior_samples = np.floor(posterior_samples * posterior_size)
+            posterior_samples = int(np.floor(posterior_samples * posterior_size))
 
         elif posterior_samples is None:
             posterior_samples = posterior_size
@@ -324,7 +324,7 @@ class PyMCStateSpace:
             if posterior_samples > 1.0 or posterior_samples < 0.0:
                 raise ValueError('If posterior_samples is a float, it should be between 0 and 1, representing the '
                                  'fraction of total posterior samples to re-sample.')
-            posterior_samples = np.floor(posterior_samples * posterior_size)
+            posterior_samples = int(np.floor(posterior_samples * posterior_size))
 
         elif posterior_samples is None:
             posterior_samples = posterior_size
