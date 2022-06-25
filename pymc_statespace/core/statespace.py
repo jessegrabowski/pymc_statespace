@@ -1,21 +1,23 @@
 import aesara.tensor as at
 import aesara
 
-from pymc_statespace.filters import KalmanFilter
+from pymc_statespace.filters import StandardFilter, UnivariateFilter
 from pymc_statespace.core.representation import AesaraRepresentation
 from pymc_statespace.utils.simulation import conditional_simulation, unconditional_simulations
 from warnings import simplefilter, catch_warnings
 
 import numpy as np
 from numpy.typing import ArrayLike
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 from pymc.model import modelcontext
 import pymc as pm
 
+FILTER_FACTORY = {'standard': StandardFilter, 'univariate': UnivariateFilter}
+
 
 class PyMCStateSpace:
-    def __init__(self, data, k_states, k_posdef):
+    def __init__(self, data, k_states, k_posdef, filter_type='standard'):
         self.data = data
         self.n_obs, self.k_endog = data.shape
         self.k_states = k_states
@@ -23,7 +25,11 @@ class PyMCStateSpace:
 
         # All models contain a state space representation and a Kalman filter
         self.ssm = AesaraRepresentation(data, k_states, k_posdef)
-        self.kalman_filter = KalmanFilter()
+
+        if filter_type.lower() not in ['standard', 'univariate']:
+            raise NotImplementedError('Only the standard filter and the univariate filter are implemented')
+
+        self.kalman_filter = FILTER_FACTORY[filter_type.lower()]
 
         # Placeholders for the aesara functions that will return the predicted state, covariance, and log likelihood
         # given parameter vector theta
@@ -49,7 +55,7 @@ class PyMCStateSpace:
         return a0, P0, T, Z, R, H, Q
 
     @property
-    def param_names(self):
+    def param_names(self) -> List[str]:
         return NotImplementedError
 
     def update(self, theta: at.TensorVariable) -> None:

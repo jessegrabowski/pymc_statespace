@@ -16,6 +16,7 @@ def numba_mvn_draws(mu, cov):
 @njit
 def conditional_simulation(mus, covs, n, k, n_simulations=100):
     simulations = np.empty((n * n_simulations, n, k))
+
     for i in range(n):
         for j in range(n_simulations):
             sim = numba_mvn_draws(mus[i], numba_block_diagonal(covs[i]))
@@ -56,10 +57,10 @@ def simulate_statespace(T, Z, R, H, Q, n_steps):
 def unconditional_simulations(thetas, update_funcs, n_steps=100, n_simulations=100):
     samples, *_ = thetas[0].shape
     _, _, T, Z, R, H, Q = [f(*[theta[0] for theta in thetas])[0] for f in update_funcs]
-    _, k = Z.shape
+    n_obs, n_states = Z.shape
 
-    states = np.empty((samples * n_simulations, n_steps, k))
-    observed = np.empty((samples * n_simulations, n_steps, k))
+    states = np.empty((samples * n_simulations, n_steps, n_states))
+    observed = np.empty((samples * n_simulations, n_steps, n_obs))
 
     for i in range(samples):
         theta = [x[i] for x in thetas]

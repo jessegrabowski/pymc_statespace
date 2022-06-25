@@ -1,3 +1,3 @@
-from .kalman_filter import KalmanFilter
+from .kalman_filter import StandardFilter, UnivariateFilter
 
-__all__ = ['KalmanFilter']
+__all__ = ['StandardFilter', 'UnivariateFilter']
