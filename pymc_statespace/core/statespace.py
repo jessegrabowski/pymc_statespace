@@ -1,7 +1,7 @@
 import aesara.tensor as at
 import aesara
 
-from pymc_statespace.filters import StandardFilter, UnivariateFilter, SteadyStateFilter
+from pymc_statespace.filters import StandardFilter, UnivariateFilter, SteadyStateFilter, KalmanSmoother
 from pymc_statespace.core.representation import AesaraRepresentation
 from pymc_statespace.utils.simulation import conditional_simulation, unconditional_simulations
 from warnings import simplefilter, catch_warnings
@@ -31,6 +31,7 @@ class PyMCStateSpace:
                                       'steady state filter are implemented')
 
         self.kalman_filter = FILTER_FACTORY[filter_type.lower()]()
+        self.kalman_smoother = KalmanSmoother()
 
         # Placeholders for the aesara functions that will return the predicted state, covariance, and log likelihood
         # given parameter vector theta
@@ -122,21 +123,23 @@ class PyMCStateSpace:
             # log_likelihood, ll_obs = self.kalman_filter.build_graph(at.as_tensor_variable(self.data),
             #                                                         *self.unpack_statespace())
 
-            filtered_states, predicted_states, \
-                filtered_covariances, predicted_covariances = \
-                self.kalman_filter.build_graph(at.as_tensor_variable(self.data), *self.unpack_statespace())
+            # filtered_states, predicted_states, \
+            #     filtered_covariances, predicted_covariances,\
+            #     log_likelihood, ll_obs = self.kalman_filter.build_graph(at.as_tensor_variable(self.data),
+            #                                                             *self.unpack_statespace())
 
-            pm.Deterministic('filtered_states', filtered_states)
-            pm.Deterministic('predicted_states', predicted_states)
+            # pm.Deterministic('filtered_states', filtered_states)
+            # pm.Deterministic('predicted_states', predicted_states)
             # pm.Deterministic('smoothed_states', smoothed_states)
 
-            pm.Deterministic('predicted_covariances', predicted_covariances)
-            pm.Deterministic('filtered_covariances', filtered_covariances)
+            # pm.Deterministic('predicted_covariances', predicted_covariances)
+            # pm.Deterministic('filtered_covariances', filtered_covariances)
             # pm.Deterministic('smoothed_covariances', smoothed_covariances)
 
             # pm.Potential('log_likelihood', log_likelihood)
 
-            return predicted_states, predicted_covariances
+            return self.kalman_filter.build_graph(at.as_tensor_variable(self.data),
+                                                  *self.unpack_statespace())
 
     @staticmethod
     def sample_conditional_prior(filter_output='filtered',
