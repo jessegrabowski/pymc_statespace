@@ -1,8 +1,7 @@
 from pymc_statespace.core.statespace import PyMCStateSpace
-from pymc_statespace.utils.solve_discrete_lyapunov import doubling_step
+from pymc_statespace.utils.aesara_scipy import solve_discrete_lyapunov
 import numpy as np
 import aesara.tensor as at
-import aesara
 
 from typing import Tuple
 
@@ -13,20 +12,17 @@ class BayesianARMA(PyMCStateSpace):
                  data,
                  order: Tuple[int, int],
                  stationary_initialization: bool = True,
-                 doubling_tol=1e-8,
-                 doubling_max_iter=100):
+                 filter_type: str = 'standard'):
 
         # Model order
         self.p, self.q = order
 
         self.stationary_initialization = stationary_initialization
-        self.doubling_tol = doubling_tol
-        self.doubling_max_iter = doubling_max_iter
 
         k_states = max(self.p, self.q + 1)
         k_posdef = 1
 
-        super().__init__(data, k_states, k_posdef)
+        super().__init__(data, k_states, k_posdef, filter_type)
 
         # Initialize the matrices
         self.ssm['design'] = np.r_[[1.0], np.zeros(k_states - 1)][None]
@@ -97,11 +93,5 @@ class BayesianARMA(PyMCStateSpace):
             R = self.ssm['selection']
             Q = self.ssm['state_cov']
 
-            doubling_result, doubling_updates = aesara.scan(doubling_step,
-                                                            outputs_info=[T, at.linalg.matrix_dot(R, Q, R.T)],
-                                                            non_sequences=[self.doubling_tol],
-                                                            n_steps=self.doubling_max_iter,
-                                                            name='doubling_algo')
-
-            _, P0 = doubling_result
-            self.ssm['initial_state_cov', :, :] = P0[-1]
+            P0 = solve_discrete_lyapunov(T, at.linalg.matrix_dot(R, Q, R.T), method='bilinear')
+            self.ssm['initial_state_cov', :, :] = P0

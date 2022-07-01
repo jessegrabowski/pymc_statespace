@@ -1,7 +1,7 @@
 import aesara.tensor as at
 import aesara
 
-from pymc_statespace.filters import StandardFilter, UnivariateFilter
+from pymc_statespace.filters import StandardFilter, UnivariateFilter, SteadyStateFilter
 from pymc_statespace.core.representation import AesaraRepresentation
 from pymc_statespace.utils.simulation import conditional_simulation, unconditional_simulations
 from warnings import simplefilter, catch_warnings
@@ -13,7 +13,7 @@ from typing import Optional, Tuple, List
 from pymc.model import modelcontext
 import pymc as pm
 
-FILTER_FACTORY = {'standard': StandardFilter, 'univariate': UnivariateFilter}
+FILTER_FACTORY = {'standard': StandardFilter, 'univariate': UnivariateFilter, 'steady_state': SteadyStateFilter}
 
 
 class PyMCStateSpace:
@@ -26,10 +26,11 @@ class PyMCStateSpace:
         # All models contain a state space representation and a Kalman filter
         self.ssm = AesaraRepresentation(data, k_states, k_posdef)
 
-        if filter_type.lower() not in ['standard', 'univariate']:
-            raise NotImplementedError('Only the standard filter and the univariate filter are implemented')
+        if filter_type.lower() not in ['standard', 'univariate', 'steady_state']:
+            raise NotImplementedError('Only the standard filter, univariate filter, and '
+                                      'steady state filter are implemented')
 
-        self.kalman_filter = FILTER_FACTORY[filter_type.lower()]
+        self.kalman_filter = FILTER_FACTORY[filter_type.lower()]()
 
         # Placeholders for the aesara functions that will return the predicted state, covariance, and log likelihood
         # given parameter vector theta
@@ -116,20 +117,26 @@ class PyMCStateSpace:
             theta = self.gather_required_random_variables()
             self.update(theta)
 
-            filtered_states, predicted_states, smoothed_states, \
-            filtered_covariances, predicted_covariances, smoothed_covariances, \
-            log_likelihood, ll_obs = self.kalman_filter.build_graph(at.as_tensor_variable(self.data),
-                                                                    *self.unpack_statespace())
+            # filtered_states, predicted_states, smoothed_states, \
+            # filtered_covariances, predicted_covariances, smoothed_covariances, \
+            # log_likelihood, ll_obs = self.kalman_filter.build_graph(at.as_tensor_variable(self.data),
+            #                                                         *self.unpack_statespace())
+
+            filtered_states, predicted_states, \
+                filtered_covariances, predicted_covariances = \
+                self.kalman_filter.build_graph(at.as_tensor_variable(self.data), *self.unpack_statespace())
 
             pm.Deterministic('filtered_states', filtered_states)
             pm.Deterministic('predicted_states', predicted_states)
-            pm.Deterministic('smoothed_states', smoothed_states)
+            # pm.Deterministic('smoothed_states', smoothed_states)
 
             pm.Deterministic('predicted_covariances', predicted_covariances)
             pm.Deterministic('filtered_covariances', filtered_covariances)
-            pm.Deterministic('smoothed_covariances', smoothed_covariances)
+            # pm.Deterministic('smoothed_covariances', smoothed_covariances)
 
-            pm.Potential('log_likelihood', log_likelihood)
+            # pm.Potential('log_likelihood', log_likelihood)
+
+            return predicted_states, predicted_covariances
 
     @staticmethod
     def sample_conditional_prior(filter_output='filtered',
