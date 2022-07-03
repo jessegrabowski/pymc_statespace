@@ -1,7 +1,7 @@
 import aesara.tensor as at
 import aesara
 
-from pymc_statespace.filters import StandardFilter, UnivariateFilter, SteadyStateFilter, KalmanSmoother
+from pymc_statespace.filters import StandardFilter, UnivariateFilter, SteadyStateFilter, KalmanSmoother, SingleTimeseriesFilter
 from pymc_statespace.core.representation import AesaraRepresentation
 from pymc_statespace.utils.simulation import conditional_simulation, unconditional_simulations
 from warnings import simplefilter, catch_warnings
@@ -13,7 +13,8 @@ from typing import Optional, Tuple, List
 from pymc.model import modelcontext
 import pymc as pm
 
-FILTER_FACTORY = {'standard': StandardFilter, 'univariate': UnivariateFilter, 'steady_state': SteadyStateFilter}
+FILTER_FACTORY = {'standard': StandardFilter, 'univariate': UnivariateFilter, 'steady_state': SteadyStateFilter,
+                  'single':SingleTimeseriesFilter}
 
 
 class PyMCStateSpace:
@@ -26,9 +27,11 @@ class PyMCStateSpace:
         # All models contain a state space representation and a Kalman filter
         self.ssm = AesaraRepresentation(data, k_states, k_posdef)
 
-        if filter_type.lower() not in ['standard', 'univariate', 'steady_state']:
-            raise NotImplementedError('Only the standard filter, univariate filter, and '
-                                      'steady state filter are implemented')
+        if filter_type.lower() not in FILTER_FACTORY.keys():
+            raise NotImplementedError('The following are valid filter types: ' + ', '.join(list(FILTER_FACTORY.keys())))
+
+        if filter_type == 'single' and self.k_endog > 1:
+            raise ValueError('Cannot use filter_type = "single" with multiple observed time series')
 
         self.kalman_filter = FILTER_FACTORY[filter_type.lower()]()
         self.kalman_smoother = KalmanSmoother()

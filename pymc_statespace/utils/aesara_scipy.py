@@ -6,6 +6,7 @@ from aesara.tensor.nlinalg import matrix_dot
 
 import scipy
 
+
 class SolveDiscreteLyapunov(at.Op):
     __props__ = ("method",)
 
@@ -70,7 +71,7 @@ def solve_discrete_lyapunov(A, Q, method: Optional[str] = None) -> TensorVariabl
 class SolveDiscreteARE(at.Op):
     __props__ = ('enforce_Q_symmetric',)
 
-    def __init__(self, enforce_Q_symmetric = False):
+    def __init__(self, enforce_Q_symmetric=False):
         self.enforce_Q_symmetric = enforce_Q_symmetric
 
     def make_node(self, A, B, Q, R):
@@ -140,3 +141,24 @@ def solve_discrete_are(A, B, Q, R) -> TensorVariable:
     """
 
     return SolveDiscreteARE()(A, B, Q, R)
+
+
+def allocate_block(A, out, r_start, c_start, r_stride, c_stride):
+    row_slice = slice(r_start, r_start + r_stride)
+    col_slice = slice(c_start, c_start + c_stride)
+
+    next_r = r_start + r_stride
+    next_c = c_start + c_stride
+
+    return at.set_subtensor(out[row_slice, col_slice], A), next_r, next_c
+
+
+def block_diag(arr: at.tensor3):
+    n, rows, cols = arr.shape
+    out = at.zeros((n * rows, n * cols))
+
+    result, _ = aesara.scan(allocate_block,
+                            sequences=[arr],
+                            outputs_info=[out, at.zeros(1, dtype='int64'), at.zeros(1, dtype='int64')],
+                            non_sequences=[rows.astype('int64'), cols.astype('int64')])
+    return result[0][-1]
