@@ -1,7 +1,7 @@
 import aesara.tensor as at
 import aesara
 
-from pymc_statespace.filters import StandardFilter, UnivariateFilter, SteadyStateFilter, KalmanSmoother, SingleTimeseriesFilter
+from pymc_statespace.filters import StandardFilter, UnivariateFilter, SteadyStateFilter, KalmanSmoother, SingleTimeseriesFilter, CholeskyFilter
 from pymc_statespace.core.representation import AesaraRepresentation
 from pymc_statespace.utils.simulation import conditional_simulation, unconditional_simulations
 from warnings import simplefilter, catch_warnings
@@ -14,7 +14,7 @@ from pymc.model import modelcontext
 import pymc as pm
 
 FILTER_FACTORY = {'standard': StandardFilter, 'univariate': UnivariateFilter, 'steady_state': SteadyStateFilter,
-                  'single':SingleTimeseriesFilter}
+                  'single':SingleTimeseriesFilter, 'cholesky':CholeskyFilter}
 
 
 class PyMCStateSpace:
@@ -51,11 +51,11 @@ class PyMCStateSpace:
     def unpack_statespace(self):
         a0 = self.ssm['initial_state']
         P0 = self.ssm['initial_state_cov']
-        Q = self.ssm['state_cov']
-        H = self.ssm['obs_cov']
         T = self.ssm['transition']
-        R = self.ssm['selection']
         Z = self.ssm['design']
+        R = self.ssm['selection']
+        H = self.ssm['obs_cov']
+        Q = self.ssm['state_cov']
 
         return a0, P0, T, Z, R, H, Q
 
@@ -120,6 +120,7 @@ class PyMCStateSpace:
         with pymc_model:
             theta = self.gather_required_random_variables()
             self.update(theta)
+
 
             # filtered_states, predicted_states, smoothed_states, \
             # filtered_covariances, predicted_covariances, smoothed_covariances, \
