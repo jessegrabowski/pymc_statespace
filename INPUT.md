@@ -31,45 +31,31 @@ The linear state space model is a workhorse in many disciplines, and is flexible
 
 ## Example Usage
 
-At present, the API is not particularly friendly, but neverthless ARMA models are available out of the box. One needs only import the package and delcare a new model of order `(p, q)`, as follows:
-
+Currently, local level and ARMA models are implemented. To initialize a model, simply create a model object, provide data, and any additional arguments unique to that model. 
 ```python
 import pymc_statespace as pmss
 #make sure data is a 2d numpy array!
-model = pmss.BayesianARMA(data = data[:, None], order=(1, 1))
+arma_model = pmss.BayesianARMA(data = data[:, None], order=(1, 1))
+```
+You will see a message letting you know the model was created, as well as telling you the expected parameter names you will need to create inside a PyMC model block.
+```commandline
+Model successfully initialized! The following parameters should be assigned priors inside a PyMC model block: x0, sigma_state, rho, theta
 ```
 
 Next, a PyMC model is declared as usual, and the parameters can be passed into the state space model. This is done as follows:
 ```python
 with pm.Model() as arma_model:
-    # Normal PyMC stuff
-    a1 = pm.Normal('initial_states', mu=0.0, sigma=1.0, shape=2) # m = 2
-    state_sigmas = pm.HalfNormal('state_sigma', sigma=1.0, shape=1) # r = 1
-    
-    initial_sigma = pm.HalfNormal('initial_sigma', sigma=1.0, shape=2)
+    x0 = pm.Normal('x0', mu=0, sigma=1.0, shape=mod.k_states)
+    sigma_state = pm.HalfNormal('sigma_state', sigma=1)
 
-    # note the entire P1 matrix needs to be declared, even r != m. Here I only estimate the diagonal of P1, in principal
-    # you can estimate some, none, or all of the initial states and covariances.
-    P1 = np.eye(2) * initial_sigma 
-    
-    # AR parameter
-    rhos = pm.TruncatedNormal('rho', mu=0.0, sigma=0.5, lower=-1.0, upper=1.0, shape=1) # p = 1
+    rho = pm.TruncatedNormal('rho', mu=0.0, sigma=0.5, lower=-1.0, upper=1.0, shape=p)
+    theta = pm.Normal('theta', mu=0.0, sigma=0.5, shape=q)
 
-    # MA parameter
-    thetas = pm.Normal('thetas', mu=0.0, sigma=0.5, shape=1) # q = 1
-    
-    #Special PyMC StateSpace stuff
-    params = at.concatenate([x0.ravel(), P0.ravel(), state_sigmas.ravel(), rhos.ravel(), thetas.ravel()])
-    model.build_statespace_graph(params)
-
-    likelihood = pm.Potential("likelihood", model.log_likelihood)
-    y_hat = pm.Deterministic('y_hat', model.filtered_states)
-    cov_hat = pm.Deterministic('cov_hat', model.filtered_covarainces)
+    arma_model.build_statespace_graph()
+    trace_1 = pm.sample(init='jitter+adapt_diag_grad', target_accept=0.9)
 ```
 
-Priors over the initial model parameters are declared as normal in a PyMC model, then need to be flattened and concatenated into a single vector. Note that the order matters! This isn't a great design, hopefully it can become a bit more user-friendly soon.
-
-After forming the parameter vector, pass it into the `model.build_statespace_graph` method to create the Kalman filter computational graph and allow PyMC access to the model's gradients. Once this method is run, three results from the Kalman filter will be exposed in the model: `model.log_likelihood`, `model.filtered_states`, and `model.filtered_covariances`. The log likelihood needs to be provided to `pm.Potential` to complete the model. The other two can be passed into `pm.Deterministic` to make post-estimation a bit more convenient, but they aren't strictly necessary.
+After you place priors over the requested parameters, call `arma_model.build_statespace_graph()` to automatically put everything together into a state space system. If you are missing any parameters, you will get a error letting you know what else needs to be defined.
 
 And that's it! After this, you can sample the PyMC model as normal.
 
@@ -95,6 +81,14 @@ def __init__(self, data):
                                           [0.0]])
     self.ssm['initial_state_cov'] = np.array([[1.0, 0.0],
                                               [0.0, 1.0]])
+```
+
+You will also need to set up the `param_names` class method, which returns a list of parameter names. This lets users know what priors they need to define, and lets the model gather the required parameters from the PyMC model context.
+
+```python
+@property
+def param_names(self):
+    return ['x0', 'P0', 'sigma_obs', 'sigma_state']
 ```
 
 `self.ssm` is an `AesaraRepresentation` class object that is created by the super constructor. Every model has a `self.ssm` and a `self.kalman_filter` created after the super constructor is called. All the matrices stored in `self.ssm` are Aesara tensor variables, but numpy arrays can be passed to them for convenience. Behind the scenes, they will be converted to Aesara tensors. 
@@ -124,6 +118,6 @@ def update(self, theta: at.TensorVariable) -> None:
     self.ssm['state_cov', np.diag_indices(2)] = theta[1:]
 ```
 
-This function is why the order matters when flattening and concatenating the random variables inside the PyMC model. In this case, we must first pass `sigma_obs`, followed by `sigma_level`, then `sigma_trend`. 
+And that's it! By making a model you also gain access to simulation helper functions, including prior and posterior simulation from the predicted, filtered, and smoothed states, as well as stability analysis and impulse response functions.
 
-But that's it! Obviously this API isn't great, and will be subject to change as the package evolves, but it should be enough to get a motivated research going. Happy estimation, and let me know all the bugs you find by opening an issue.
+This package is very much a work in progress and really needs help! If you're interested in time series analysis and want to contribute, please reach out!
