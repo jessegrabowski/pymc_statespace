@@ -1,8 +1,8 @@
 from typing import Optional
-import aesara
-from aesara.tensor import as_tensor_variable, TensorVariable
-import aesara.tensor as at
-from aesara.tensor.nlinalg import matrix_dot
+import pytensor
+from pytensor.tensor import as_tensor_variable, TensorVariable
+import pytensor.tensor as at
+from pytensor.tensor.nlinalg import matrix_dot
 
 import scipy
 
@@ -17,10 +17,10 @@ class SolveDiscreteLyapunov(at.Op):
         A = as_tensor_variable(A)
         B = as_tensor_variable(B)
 
-        out_dtype = aesara.scalar.upcast(A.dtype, B.dtype)
-        X = aesara.tensor.matrix(dtype=out_dtype)
+        out_dtype = pytensor.scalar.upcast(A.dtype, B.dtype)
+        X = pytensor.tensor.matrix(dtype=out_dtype)
 
-        return aesara.graph.basic.Apply(self, [A, B], [X])
+        return pytensor.graph.basic.Apply(self, [A, B], [X])
 
     def perform(self, node, inputs, output_storage):
         (A, Q) = inputs
@@ -80,10 +80,10 @@ class SolveDiscreteARE(at.Op):
         Q = as_tensor_variable(Q)
         R = as_tensor_variable(R)
 
-        out_dtype = aesara.scalar.upcast(A.dtype, B.dtype, Q.dtype, R.dtype)
-        X = aesara.tensor.matrix(dtype=out_dtype)
+        out_dtype = pytensor.scalar.upcast(A.dtype, B.dtype, Q.dtype, R.dtype)
+        X = pytensor.tensor.matrix(dtype=out_dtype)
 
-        return aesara.graph.basic.Apply(self, [A, B, Q, R], [X])
+        return pytensor.graph.basic.Apply(self, [A, B, Q, R], [X])
 
     def perform(self, node, inputs, output_storage):
         A, B, Q, R = inputs
@@ -157,7 +157,7 @@ def block_diag(arr: at.tensor3):
     n, rows, cols = arr.shape
     out = at.zeros((n * rows, n * cols))
 
-    result, _ = aesara.scan(allocate_block,
+    result, _ = pytensor.scan(allocate_block,
                             sequences=[arr],
                             outputs_info=[out, at.zeros(1, dtype='int64'), at.zeros(1, dtype='int64')],
                             non_sequences=[rows.astype('int64'), cols.astype('int64')])

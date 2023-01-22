@@ -1,6 +1,6 @@
-import aesara
-import aesara.tensor as at
-from aesara.tensor.nlinalg import matrix_dot
+import pytensor
+import pytensor.tensor as at
+from pytensor.tensor.nlinalg import matrix_dot
 
 
 class KalmanSmoother:
@@ -8,7 +8,7 @@ class KalmanSmoother:
         a_last = filtered_states[-1]
         P_last = filtered_covariances[-1]
 
-        smoother_result, updates = aesara.scan(self.smoother_step,
+        smoother_result, updates = pytensor.scan(self.smoother_step,
                                                sequences=[filtered_states[:-1],
                                                           filtered_covariances[:-1]],
                                                outputs_info=[a_last, P_last],

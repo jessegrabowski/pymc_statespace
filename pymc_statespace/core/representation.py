@@ -1,12 +1,12 @@
-import aesara.tensor as at
+import pytensor.tensor as at
 import numpy as np
 from numpy.typing import ArrayLike
-from typing import Optional, Tuple, List, Type
+from typing import Optional, Tuple, List, Type, Union
 
-KeyLike = Tuple[str | int] | str
+KeyLike = Union[Tuple[Union[str, int]], str]
 
 
-class AesaraRepresentation:
+class PytensorRepresentation:
     data = at.matrix(name='Data')
     design = at.tensor3(name='design')
     obs_cov = at.tensor3(name='obs_cov')
@@ -110,7 +110,7 @@ class AesaraRepresentation:
         if key not in self.shapes:
             raise IndexError(f'{key} is an invalid state space matrix name')
 
-    def _add_time_dim_to_slice(self, name: str, slice_: List[int] | Tuple[int], n_dim: int) -> Tuple[int]:
+    def _add_time_dim_to_slice(self, name: str, slice_: Union[List[int], Tuple[int]], n_dim: int) -> Tuple[int]:
         if self.shapes[name][-1] == 1 and len(slice_) <= (n_dim - 1):
             return tuple(slice_) + (0,)
 
@@ -166,7 +166,7 @@ class AesaraRepresentation:
         else:
             raise IndexError('First index must the name of a valid state space matrix.')
 
-    def __setitem__(self, key: KeyLike, value: float | int | ArrayLike) -> None:
+    def __setitem__(self, key: KeyLike, value: Union[float, int, ArrayLike]) -> None:
         _type = type(key)
         # Case 1: key is a string: we are setting an entire matrix.
         if _type is str:

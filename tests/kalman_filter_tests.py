@@ -1,8 +1,8 @@
 import unittest
 from pymc_statespace.filters import StandardFilter, UnivariateFilter, CholeskyFilter, KalmanSmoother, \
     SingleTimeseriesFilter
-import aesara
-import aesara.tensor as at
+import pytensor
+import pytensor.tensor as at
 import numpy as np
 import pandas as pd
 from statsmodel_local_level import LocalLinearTrend
@@ -130,7 +130,7 @@ def filter_test_class_factory(kfilter, test_multiple_observed=True):
     class FilterTestSuite(FilterTestBase):
         def setUp(self):
             inputs, outputs = initialize_filter(kfilter())
-            self.filter_func = aesara.function(inputs, outputs)
+            self.filter_func = pytensor.function(inputs, outputs)
 
         def test_output_shapes_1d(self):
             p, m, r, n = 1, 1, 1, 10

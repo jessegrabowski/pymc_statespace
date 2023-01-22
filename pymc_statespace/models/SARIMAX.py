@@ -1,7 +1,7 @@
 from pymc_statespace.core.statespace import PyMCStateSpace
 from pymc_statespace.utils.aesara_scipy import solve_discrete_lyapunov
 import numpy as np
-import aesara.tensor as at
+import pytensor.tensor as at
 
 from typing import Tuple
 

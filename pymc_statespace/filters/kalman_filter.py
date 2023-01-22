@@ -1,10 +1,10 @@
 from abc import ABC
 from typing import List, Tuple
 
-import aesara
-import aesara.tensor as at
-from aesara.tensor.nlinalg import matrix_dot
-from aesara.tensor import TensorVariable
+import pytensor
+import pytensor.tensor as at
+from pytensor.tensor.nlinalg import matrix_dot
+from pytensor.tensor import TensorVariable
 
 import numpy as np
 
@@ -29,7 +29,7 @@ class BaseFilter(ABC):
         TODO: Add a check for time-varying matrices (ndim > 2) and add matrices to scan sequences if so.
         """
 
-        results, updates = aesara.scan(self.kalman_step,
+        results, updates = pytensor.scan(self.kalman_step,
                                        sequences=[data],
                                        outputs_info=[None, a0, None, P0, None],
                                        non_sequences=[T, Z, R, H, Q],
@@ -81,7 +81,7 @@ class BaseFilter(ABC):
 
         y = y[:, None]
         nan_mask = at.isnan(y).ravel()
-        all_nan_flag = at.all(nan_mask).astype(aesara.config.floatX)
+        all_nan_flag = at.all(nan_mask).astype(pytensor.config.floatX)
 
         W = at.set_subtensor(at.eye(y.shape[0])[nan_mask, nan_mask], 0.0)
 
@@ -174,7 +174,7 @@ class SingleTimeseriesFilter(BaseFilter):
         _postprocess_scan_results function does not take Z or H.
         """
 
-        results, updates = aesara.scan(self.kalman_step,
+        results, updates = pytensor.scan(self.kalman_step,
                                        sequences=[data],
                                        outputs_info=[None, a0, None, P0, None],
                                        non_sequences=[T, Z, R, H, Q],
@@ -245,7 +245,7 @@ class SteadyStateFilter(BaseFilter):
         F = matrix_dot(Z, P_steady, Z.T) + H
         F_inv = at.linalg.solve(F, at.eye(F.shape[0]), assume_a='pos')
 
-        results, updates = aesara.scan(self.kalman_step,
+        results, updates = pytensor.scan(self.kalman_step,
                                        sequences=[data],
                                        outputs_info=[None, a0, None, P0, None],
                                        non_sequences=[F_inv, T, Z, R, H, Q],
@@ -291,7 +291,7 @@ class SteadyStateFilter(BaseFilter):
 
         y = y[:, None]
         nan_mask = at.isnan(y).ravel()
-        all_nan_flag = at.all(nan_mask).astype(aesara.config.floatX)
+        all_nan_flag = at.all(nan_mask).astype(pytensor.config.floatX)
 
         W = at.set_subtensor(at.eye(y.shape[0])[nan_mask, nan_mask], 0.0)
 
@@ -352,7 +352,7 @@ class UnivariateFilter(BaseFilter):
         H_masked = W.dot(H)
         y_masked = at.set_subtensor(y[nan_mask], 0.0)
 
-        result, updates = aesara.scan(self._univariate_inner_filter_step,
+        result, updates = pytensor.scan(self._univariate_inner_filter_step,
                                       sequences=[y_masked, Z_masked, at.diag(H_masked), nan_mask],
                                       outputs_info=[a, P, None])
 

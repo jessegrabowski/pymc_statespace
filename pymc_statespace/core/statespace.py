@@ -1,14 +1,14 @@
-import aesara.tensor as at
-import aesara
+import pytensor.tensor as at
+import pytensor
 
 from pymc_statespace.filters import StandardFilter, UnivariateFilter, SteadyStateFilter, KalmanSmoother, SingleTimeseriesFilter, CholeskyFilter
-from pymc_statespace.core.representation import AesaraRepresentation
+from pymc_statespace.core.representation import PytensorRepresentation
 from pymc_statespace.utils.simulation import conditional_simulation, unconditional_simulations
 from warnings import simplefilter, catch_warnings
 
 import numpy as np
 from numpy.typing import ArrayLike
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Union
 
 from pymc.model import modelcontext
 import pymc as pm
@@ -25,7 +25,7 @@ class PyMCStateSpace:
         self.k_posdef = k_posdef
 
         # All models contain a state space representation and a Kalman filter
-        self.ssm = AesaraRepresentation(data, k_states, k_posdef)
+        self.ssm = PytensorRepresentation(data, k_states, k_posdef)
 
         if filter_type.lower() not in FILTER_FACTORY.keys():
             raise NotImplementedError('The following are valid filter types: ' + ', '.join(list(FILTER_FACTORY.keys())))
@@ -127,23 +127,23 @@ class PyMCStateSpace:
             # log_likelihood, ll_obs = self.kalman_filter.build_graph(at.as_tensor_variable(self.data),
             #                                                         *self.unpack_statespace())
 
-            # filtered_states, predicted_states, \
-            #     filtered_covariances, predicted_covariances,\
-            #     log_likelihood, ll_obs = self.kalman_filter.build_graph(at.as_tensor_variable(self.data),
-            #                                                             *self.unpack_statespace())
+            filtered_states, predicted_states, \
+                filtered_covariances, predicted_covariances,\
+                log_likelihood, ll_obs = self.kalman_filter.build_graph(at.as_tensor_variable(self.data),
+                                                                        *self.unpack_statespace())
 
-            # pm.Deterministic('filtered_states', filtered_states)
-            # pm.Deterministic('predicted_states', predicted_states)
+            pm.Deterministic('filtered_states', filtered_states)
+            pm.Deterministic('predicted_states', predicted_states)
             # pm.Deterministic('smoothed_states', smoothed_states)
 
-            # pm.Deterministic('predicted_covariances', predicted_covariances)
-            # pm.Deterministic('filtered_covariances', filtered_covariances)
+            pm.Deterministic('predicted_covariances', predicted_covariances)
+            pm.Deterministic('filtered_covariances', filtered_covariances)
             # pm.Deterministic('smoothed_covariances', smoothed_covariances)
 
-            # pm.Potential('log_likelihood', log_likelihood)
+            pm.Potential('log_likelihood', log_likelihood)
 
-            return self.kalman_filter.build_graph(at.as_tensor_variable(self.data),
-                                                  *self.unpack_statespace())
+            # return self.kalman_filter.build_graph(at.as_tensor_variable(self.data),
+            #                                       *self.unpack_statespace())
 
     @staticmethod
     def sample_conditional_prior(filter_output='filtered',
@@ -196,7 +196,7 @@ class PyMCStateSpace:
     def sample_conditional_posterior(trace,
                                      filter_output: str = 'filtered',
                                      n_simulations: int = 100,
-                                     posterior_samples: Optional[float | int] = None):
+                                     posterior_samples: Optional[Union[float, int]] = None):
         """
         Sample from the conditional posterior; that is, given parameter draws from the posterior distribution,
         compute kalman filtered trajectories. Trajectories are drawn from a single multivariate normal with mean and
@@ -295,7 +295,7 @@ class PyMCStateSpace:
                         rvs_on_graph.append(param)
 
         # TODO: This is pretty hacky, ask on the forums if there is a better solution
-        matrix_update_funcs = [aesara.function(rvs_on_graph, [X], on_unused_input='ignore') for X in
+        matrix_update_funcs = [pytensor.function(rvs_on_graph, [X], on_unused_input='ignore') for X in
                                self.unpack_statespace()]
 
         # Take the 0th element to remove the chain dimension
@@ -363,7 +363,7 @@ class PyMCStateSpace:
                     if param.name == param_name:
                         rvs_on_graph.append(param)
 
-        matrix_update_funcs = [aesara.function(rvs_on_graph, [X], on_unused_input='ignore') for X in
+        matrix_update_funcs = [pytensor.function(rvs_on_graph, [X], on_unused_input='ignore') for X in
                                self.unpack_statespace()]
 
         thetas = [trace.posterior[var].values for var in self.param_names]

@@ -1,6 +1,6 @@
 from pymc_statespace.core.statespace import PyMCStateSpace
 import numpy as np
-import aesara.tensor as at
+import pytensor.tensor as at
 
 
 class BayesianLocalLevel(PyMCStateSpace):

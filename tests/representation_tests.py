@@ -1,5 +1,5 @@
 import unittest
-from pymc_statespace.core.representation import AesaraRepresentation
+from pymc_statespace.core.representation import PytensorRepresentation
 import numpy as np
 
 
@@ -9,7 +9,7 @@ class BasicFunctionality(unittest.TestCase):
         self.data = np.arange(10)[:, None]
 
     def test_default_shapes_full_rank(self):
-        ssm = AesaraRepresentation(data=self.data, k_states=5, k_posdef=5)
+        ssm = PytensorRepresentation(data=self.data, k_states=5, k_posdef=5)
         p = ssm.data.shape[1]
         m = ssm.k_states
         r = ssm.k_posdef
@@ -22,7 +22,7 @@ class BasicFunctionality(unittest.TestCase):
         self.assertTrue(ssm['obs_cov'].eval().shape == (p, p))
 
     def test_default_shapes_low_rank(self):
-        ssm = AesaraRepresentation(data=self.data, k_states=5, k_posdef=2)
+        ssm = PytensorRepresentation(data=self.data, k_states=5, k_posdef=2)
         p = ssm.data.shape[1]
         m = ssm.k_states
         r = ssm.k_posdef
@@ -35,7 +35,7 @@ class BasicFunctionality(unittest.TestCase):
         self.assertTrue(ssm['obs_cov'].eval().shape == (p, p))
 
     def test_matrix_assignment(self):
-        ssm = AesaraRepresentation(data=self.data, k_states=5, k_posdef=2)
+        ssm = PytensorRepresentation(data=self.data, k_states=5, k_posdef=2)
 
         ssm['design', 0, 0] = 3.0
         ssm['transition', 0, :] = 2.7
