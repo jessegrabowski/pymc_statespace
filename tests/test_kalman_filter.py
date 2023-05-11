@@ -1,308 +1,155 @@
 import unittest
 
-import numpy as np
-import pandas as pd
 import pytensor
-import pytensor.tensor as at
+import pytest
 
 from pymc_statespace.filters import (
     CholeskyFilter,
-    KalmanSmoother,
     SingleTimeseriesFilter,
     StandardFilter,
     UnivariateFilter,
 )
-from tests.utilities.statsmodel_local_level import LocalLinearTrend
+from tests.utilities.test_helpers import (
+    filter_output_shapes_test_helper,
+    initialize_filter,
+    make_test_inputs,
+    nile_test_test_helper,
+    no_missing_outputs_helper,
+)
+
+standard_inout = initialize_filter(StandardFilter())
+cholesky_inout = initialize_filter(CholeskyFilter())
+univariate_inout = initialize_filter(UnivariateFilter())
+single_inout = initialize_filter(SingleTimeseriesFilter())
+
+f_standard = pytensor.function(*standard_inout)
+f_cholesky = pytensor.function(*cholesky_inout)
+f_univariate = pytensor.function(*univariate_inout)
+f_single_ts = pytensor.function(*single_inout)
+
+filter_funcs = [f_standard, f_cholesky, f_univariate, f_single_ts]
+filter_funcs_nd = [
+    f_standard,
+    f_cholesky,
+    f_univariate,
+    pytest.param(f_single_ts, marks=[pytest.mark.xfail]),
+]
+filter_names = ["StandardFilter", "CholeskyFilter", "UnivariateFilter", "SingleTimeSeriesFilter"]
 
 
-def initialize_filter(kfilter):
-    ksmoother = KalmanSmoother()
-    data = at.matrix()
-    a0 = at.matrix()
-    P0 = at.matrix()
-    Q = at.matrix()
-    H = at.matrix()
-    T = at.matrix()
-    R = at.matrix()
-    Z = at.matrix()
+@pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
+def test_output_shapes_one_state_one_observed(filter_func):
+    p, m, r, n = 1, 1, 1, 10
+    data, *inputs = make_test_inputs(p, m, r, n)
 
-    inputs = [data, a0, P0, T, Z, R, H, Q]
-
-    (
-        filtered_states,
-        predicted_states,
-        filtered_covs,
-        predicted_covs,
-        log_likelihood,
-        ll_obs,
-    ) = kfilter.build_graph(*inputs)
-
-    smoothed_states, smoothed_covs = ksmoother.build_graph(T, R, Q, filtered_states, filtered_covs)
-
-    outputs = [
-        filtered_states,
-        predicted_states,
-        smoothed_states,
-        filtered_covs,
-        predicted_covs,
-        smoothed_covs,
-        log_likelihood,
-        ll_obs,
-    ]
-
-    return inputs, outputs
+    outputs = filter_func(data, *inputs)
+    filter_output_shapes_test_helper(outputs, data, p, m, r, n)
 
 
-def add_missing_data(data, n_missing):
-    n = data.shape[0]
-    missing_idx = np.random.choice(n, n_missing, replace=False)
-    data[missing_idx] = np.nan
+@pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
+def test_output_shapes_when_all_states_are_stochastic(filter_func):
+    p, m, r, n = 1, 2, 2, 10
+    data, *inputs = make_test_inputs(p, m, r, n)
 
-    return data
-
-
-def make_test_inputs(p, m, r, n, missing_data=None):
-    data = np.arange(n * p, dtype="float").reshape(-1, p)
-    if missing_data is not None:
-        data = add_missing_data(data, missing_data)
-
-    a0 = np.zeros((m, 1))
-    P0 = np.eye(m)
-    Q = np.ones((r, r))
-    H = np.ones((p, p))
-    T = np.ones((m, m))
-    R = np.ones((m, r))
-    Z = np.ones((p, m))
-
-    inputs = [data, a0, P0, T, Z, R, H, Q]
-
-    return inputs
+    outputs = filter_func(data, *inputs)
+    filter_output_shapes_test_helper(outputs, data, p, m, r, n)
 
 
-class FilterTestBase(unittest.TestCase):
-    nile = pd.read_csv("../data/nile.csv")
+@pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
+def test_output_shapes_when_some_states_are_deterministic(filter_func):
+    p, m, r, n = 1, 5, 2, 10
+    data, *inputs = make_test_inputs(p, m, r, n)
 
-    def output_shape_test_helper(self, outputs, data, p, m, r, n):
-        (
-            filtered_states,
-            predicted_states,
-            smoothed_states,
-            filtered_covs,
-            predicted_covs,
-            smoothed_covs,
-            log_likelihood,
-            ll_obs,
-        ) = outputs
-
-        self.assertTrue(filtered_states.shape == (n, m, 1))
-        self.assertTrue(predicted_states.shape == (n + 1, m, 1))
-        self.assertTrue(smoothed_states.shape == (n, m, 1))
-
-        self.assertTrue(filtered_covs.shape == (n, m, m))
-        self.assertTrue(predicted_covs.shape == (n + 1, m, m))
-        self.assertTrue(smoothed_covs.shape == (n, m, m))
-
-        self.assertTrue(ll_obs.ravel().shape == data.ravel().shape)
-        self.assertTrue(log_likelihood.shape == ())
-
-    def none_missing_test_helper(self, outputs):
-        (
-            filtered_states,
-            predicted_states,
-            smoothed_states,
-            filtered_covs,
-            predicted_covs,
-            smoothed_covs,
-            log_likelihood,
-            ll_obs,
-        ) = outputs
-
-        self.assertTrue(~np.any(np.isnan(filtered_states)))
-        self.assertTrue(~np.any(np.isnan(predicted_states)))
-        self.assertTrue(~np.any(np.isnan(smoothed_states)))
-
-        self.assertTrue(~np.any(np.isnan(filtered_covs)))
-        self.assertTrue(~np.any(np.isnan(predicted_covs)))
-        self.assertTrue(~np.any(np.isnan(smoothed_covs)))
-
-        self.assertTrue(~np.any(np.isnan(ll_obs)))
-
-    def nile_test_test_helper(self, data, test_ll=True, test_states=False, **allclose_kwargs):
-        a0 = np.zeros((2, 1))
-        P0 = np.eye(2) * 1e6
-        Q = np.eye(2) * np.array([0.5, 0.01])
-        H = np.eye(1) * 0.8
-        T = np.array([[1.0, 1.0], [0.0, 1.0]])
-        R = np.eye(2)
-        Z = np.array([[1.0, 0.0]])
-
-        sm_model = LocalLinearTrend(
-            endog=data,
-            initialization="known",
-            initial_state_cov=P0,
-            initial_state=a0.ravel(),
-        )
-
-        (
-            filtered_states,
-            predicted_states,
-            smoothed_states,
-            filtered_covs,
-            predicted_covs,
-            smoothed_covs,
-            log_likelihood,
-            ll_obs,
-        ) = self.filter_func(data, a0, P0, T, Z, R, H, Q)
-
-        res = sm_model.fit_constrained(
-            constraints={
-                "sigma2.measurement": 0.8,
-                "sigma2.level": 0.5,
-                "sigma2.trend": 0.01,
-            }
-        )
-
-        if test_ll:
-            self.assertTrue(np.allclose(ll_obs.ravel(), res.llf_obs, **allclose_kwargs))
-        elif test_states:
-            self.assertTrue(np.allclose(filtered_states.squeeze(-1), res.states.filtered.values))
-            self.assertTrue(np.allclose(predicted_states.squeeze(-1), res.states.predicted.values))
-            self.assertTrue(np.allclose(smoothed_states.squeeze(-1), res.states.smoothed.values))
-
-            self.assertTrue(
-                np.allclose(filtered_covs, res.states.filtered_cov.values.reshape(-1, 2, 2))
-            )
-            self.assertTrue(
-                np.allclose(predicted_covs, res.states.predicted_cov.values.reshape(-1, 2, 2))
-            )
-            self.assertTrue(
-                np.allclose(
-                    smoothed_covs,
-                    res.states.smoothed_cov.values.reshape(-1, 2, 2),
-                    atol=1e-2,
-                )
-            )
+    outputs = filter_func(data, *inputs)
+    filter_output_shapes_test_helper(outputs, data, p, m, r, n)
 
 
-def filter_test_class_factory(kfilter, test_multiple_observed=True):
-    class FilterTestSuite(FilterTestBase):
-        @classmethod
-        def setUpClass(cls):
-            inputs, outputs = initialize_filter(kfilter())
-            cls.filter_func = pytensor.function(inputs, outputs)
+@pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
+def test_output_with_deterministic_observation_equation(filter_func):
+    p, m, r, n = 1, 5, 1, 10
+    data, *inputs = make_test_inputs(p, m, r, n)
 
-        def test_output_shapes_1d(self):
-            p, m, r, n = 1, 1, 1, 10
-            data, *inputs = make_test_inputs(p, m, r, n)
-
-            outputs = self.filter_func(data, *inputs)
-            self.output_shape_test_helper(outputs, data, p, m, r, n)
-
-        def test_output_shapes_full_rank(self):
-            p, m, r, n = 1, 2, 2, 10
-            data, *inputs = make_test_inputs(p, m, r, n)
-
-            outputs = self.filter_func(data, *inputs)
-            self.output_shape_test_helper(outputs, data, p, m, r, n)
-
-        def test_output_shapes_low_rank(self):
-            p, m, r, n = 1, 5, 2, 10
-            n = 10
-            data, *inputs = make_test_inputs(p, m, r, n)
-
-            outputs = self.filter_func(data, *inputs)
-            self.output_shape_test_helper(outputs, data, p, m, r, n)
-
-        def test_output_deterministic_observation(self):
-            p, m, r, n = 1, 5, 1, 10
-            data, *inputs = make_test_inputs(p, m, r, n)
-
-            outputs = self.filter_func(data, *inputs)
-            self.output_shape_test_helper(outputs, data, p, m, r, n)
-
-        def test_missing_data(self):
-            p, m, r, n = 1, 5, 1, 10
-            data, *inputs = make_test_inputs(p, m, r, n, missing_data=1)
-            outputs = self.filter_func(data, *inputs)
-            self.none_missing_test_helper(outputs)
-
-        #
-        # def test_loglike_calculation(self):
-        #     data = self.nile.copy()
-        #     self.nile_test_test_helper(data)
-        #
-        # def test_loglike_calculation_with_missing(self):
-        #     data = self.nile.copy()
-        #     missing_idx = np.random.choice(data.shape[0], size=5, replace=False)
-        #     data.iloc[missing_idx] = np.nan
-        #
-        #     self.nile_test_test_helper(data, rtol=1e-2)
-        #
-        def test_state_calculations(self):
-            data = self.nile.copy()
-            self.nile_test_test_helper(data, test_ll=False, test_states=True)
-
-        def test_state_calculations_with_missing(self):
-            data = self.nile.copy()
-            missing_idx = np.random.choice(data.shape[0], size=5, replace=False)
-            data.iloc[missing_idx] = np.nan
-
-            self.nile_test_test_helper(data, test_ll=False, test_states=True)
-
-        #
-        # def test_multiple_observed(self):
-        #     if not test_multiple_observed:
-        #         return
-        #
-        #     m, p, r, n = 4, 2, 4, 10
-        #
-        #     data = np.arange(n).repeat(2).reshape(-1, 2)
-        #     a0 = np.zeros((m, 1))
-        #     P0 = np.eye(m)
-        #
-        #     T = np.array(
-        #         [
-        #             [1.0, 1.0, 0.0, 0.0],
-        #             [0.0, 1.0, 0.0, 0.0],
-        #             [0.0, 0.0, 1.0, 1.0],
-        #             [0.0, 0.0, 0.0, 1.0],
-        #         ]
-        #     )
-        #
-        #     Z = np.array([[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]])
-        #     R = np.eye(4)
-        #     H = np.eye(2)
-        #     Q = np.eye(4)
-        #
-        #     (
-        #         filtered_states,
-        #         predicted_states,
-        #         smoothed_states,
-        #         filtered_covs,
-        #         predicted_covs,
-        #         smoothed_covs,
-        #         log_likelihood,
-        #         ll_obs,
-        #     ) = self.filter_func(data, a0, P0, T, Z, R, H, Q)
-        #
-        #     self.assertTrue(filtered_states.shape == (n, m, 1))
-        #     self.assertTrue(predicted_states.shape == (n + 1, m, 1))
-        #     self.assertTrue(smoothed_states.shape == (n, m, 1))
-        #
-        #     self.assertTrue(filtered_covs.shape == (n, m, m))
-        #     self.assertTrue(predicted_covs.shape == (n + 1, m, m))
-        #     self.assertTrue(smoothed_covs.shape == (n, m, m))
-        #
-        #     self.assertTrue(ll_obs.ravel().shape == data[:, 0].shape)
-        #     self.assertTrue(log_likelihood.shape == ())
-
-    return FilterTestSuite
+    outputs = filter_func(data, *inputs)
+    filter_output_shapes_test_helper(outputs, data, p, m, r, n)
 
 
-StandardFilterBasicFunctionality = filter_test_class_factory(StandardFilter)
-# CholeskyFilterBasicFunctionality = filter_test_class_factory(CholeskyFilter)
-# UnivariateFilterBasicFunctionality = filter_test_class_factory(UnivariateFilter)
-# SingleTimeSeriesFilterBasicFunctionality = filter_test_class_factory(SingleTimeseriesFilter, False)
+@pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
+def test_missing_data(filter_func):
+    p, m, r, n = 1, 5, 1, 10
+    data, *inputs = make_test_inputs(p, m, r, n, missing_data=1)
+    outputs = filter_func(data, *inputs)
+    no_missing_outputs_helper(outputs)
+
+
+@pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
+def test_state_calculations(filter_func):
+    nile_test_test_helper(filter_func, test_ll=False, test_states=True)
+
+
+@pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
+def test_state_calculations_with_missing(filter_func):
+    nile_test_test_helper(filter_func, test_ll=False, test_states=True, n_missing=5)
+
+    #
+    # def test_loglike_calculation(self):
+    #     data = self.nile.copy()
+    #     self.nile_test_test_helper(data)
+    #
+    # def test_loglike_calculation_with_missing(self):
+    #     data = self.nile.copy()
+    #     missing_idx = np.random.choice(data.shape[0], size=5, replace=False)
+    #     data.iloc[missing_idx] = np.nan
+    #
+    #     self.nile_test_test_helper(data, rtol=1e-2)
+    #
+
+    #
+    # def test_multiple_observed(self):
+    #     if not test_multiple_observed:
+    #         return
+    #
+    #     m, p, r, n = 4, 2, 4, 10
+    #
+    #     data = np.arange(n).repeat(2).reshape(-1, 2)
+    #     a0 = np.zeros((m, 1))
+    #     P0 = np.eye(m)
+    #
+    #     T = np.array(
+    #         [
+    #             [1.0, 1.0, 0.0, 0.0],
+    #             [0.0, 1.0, 0.0, 0.0],
+    #             [0.0, 0.0, 1.0, 1.0],
+    #             [0.0, 0.0, 0.0, 1.0],
+    #         ]
+    #     )
+    #
+    #     Z = np.array([[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]])
+    #     R = np.eye(4)
+    #     H = np.eye(2)
+    #     Q = np.eye(4)
+    #
+    #     (
+    #         filtered_states,
+    #         predicted_states,
+    #         smoothed_states,
+    #         filtered_covs,
+    #         predicted_covs,
+    #         smoothed_covs,
+    #         log_likelihood,
+    #         ll_obs,
+    #     ) = self.filter_func(data, a0, P0, T, Z, R, H, Q)
+    #
+    #     self.assertTrue(filtered_states.shape == (n, m, 1))
+    #     self.assertTrue(predicted_states.shape == (n + 1, m, 1))
+    #     self.assertTrue(smoothed_states.shape == (n, m, 1))
+    #
+    #     self.assertTrue(filtered_covs.shape == (n, m, m))
+    #     self.assertTrue(predicted_covs.shape == (n + 1, m, m))
+    #     self.assertTrue(smoothed_covs.shape == (n, m, m))
+    #
+    #     self.assertTrue(ll_obs.ravel().shape == data[:, 0].shape)
+    #     self.assertTrue(log_likelihood.shape == ())
+
 
 if __name__ == "__main__":
     unittest.main()

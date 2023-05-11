@@ -3,13 +3,17 @@ from typing import List, Tuple
 
 import numpy as np
 import pytensor
-import pytensor.tensor as at
+import pytensor.tensor as pt
+from pytensor.raise_op import Assert
 from pytensor.tensor import TensorVariable
 from pytensor.tensor.nlinalg import matrix_dot
+from pytensor.tensor.slinalg import SolveTriangular
 
 from pymc_statespace.utils.pytensor_scipy import solve_discrete_are
 
-MVN_CONST = at.log(2 * at.constant(np.pi, dtype="float64"))
+MVN_CONST = pt.log(2 * pt.constant(np.pi, dtype="float64"))
+solve_lower_triangular = SolveTriangular(lower=True)
+assert_data_is_1d = Assert("UnivariateTimeSeries filter requires data be at most 1-dimensional")
 
 
 class BaseFilter(ABC):
@@ -49,8 +53,8 @@ class BaseFilter(ABC):
 
         # This follows the Statsmodels output, which appends x0 and P0 to the predicted states, but not to the
         # filtered states
-        predicted_states = at.concatenate([a0[None], predicted_states], axis=0)
-        predicted_covariances = at.concatenate([P0[None], predicted_covariances], axis=0)
+        predicted_states = pt.concatenate([a0[None], predicted_states], axis=0)
+        predicted_covariances = pt.concatenate([P0[None], predicted_covariances], axis=0)
 
         filter_results = [
             filtered_states,
@@ -90,16 +94,15 @@ class BaseFilter(ABC):
         .. [1] Durbin, J., and S. J. Koopman. Time Series Analysis by State Space Methods.
                2nd ed, Oxford University Press, 2012.
         """
+        y = y.ravel()
+        nan_mask = pt.isnan(y)
+        all_nan_flag = pt.all(nan_mask).astype(pytensor.config.floatX)
 
-        y = y[:, None]
-        nan_mask = at.isnan(y).ravel()
-        all_nan_flag = at.all(nan_mask).astype(pytensor.config.floatX)
-
-        W = at.set_subtensor(at.eye(y.shape[0])[nan_mask, nan_mask], 0.0)
+        W = pt.set_subtensor(pt.eye(y.shape[0])[nan_mask, nan_mask], 0.0)
 
         Z_masked = W.dot(Z)
         H_masked = W.dot(H)
-        y_masked = at.set_subtensor(y[nan_mask, :], 0.0)
+        y_masked = pt.set_subtensor(y[nan_mask], 0.0)
 
         a_filtered, P_filtered, ll = self.update(
             y=y_masked, a=a, P=P, Z=Z_masked, H=H_masked, all_nan_flag=all_nan_flag
@@ -124,21 +127,21 @@ class StandardFilter(BaseFilter):
         PZT = P.dot(Z.T)
         F = Z.dot(PZT) + H
 
-        F_inv = at.linalg.solve(
-            F + at.eye(F.shape[0]) * all_nan_flag, at.eye(F.shape[0]), assume_a="pos"
+        F_inv = pt.linalg.solve(
+            F + pt.eye(F.shape[0]) * all_nan_flag, pt.eye(F.shape[0]), assume_a="pos"
         )
 
         K = PZT.dot(F_inv)
-        I_KZ = at.eye(K.shape[0]) - K.dot(Z)
+        I_KZ = pt.eye(K.shape[0]) - K.dot(Z)
 
         a_filtered = a + K.dot(v)
         P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)  # Joseph form
 
         inner_term = matrix_dot(v.T, F_inv, v)
-        ll = at.switch(
+        ll = pt.switch(
             all_nan_flag,
             0.0,
-            -0.5 * (MVN_CONST + at.log(at.linalg.det(F)) + inner_term).ravel()[0],
+            -0.5 * (MVN_CONST + pt.log(pt.linalg.det(F)) + inner_term).ravel()[0],
         )
 
         return a_filtered, P_filtered, ll
@@ -149,8 +152,6 @@ class CholeskyFilter(BaseFilter):
     def update(a, P, y, Z, H, all_nan_flag):
         """
         Conjugate update rule for the mean and covariance matrix, with log-likelihood en passant
-        TODO: Verify these equations are correct if there are multiple endogenous variables.
-        TODO: Is there a more elegant way to handle nans?
         """
 
         v = y - Z.dot(a)
@@ -158,53 +159,39 @@ class CholeskyFilter(BaseFilter):
         PZT = P.dot(Z.T)
 
         # If everything is missing, F will be [[0]] and F_chol will raise an error, so add identity to avoid the error
-        F = Z.dot(PZT) + H + at.eye(y.shape[0]) * all_nan_flag
+        F = Z.dot(PZT) + H + pt.eye(y.shape[0]) * all_nan_flag
 
-        F_chol = at.linalg.cholesky(F)
+        F_chol = pt.linalg.cholesky(F)
 
         # If everything is missing, K = 0, IKZ = I
-        K = at.linalg.solve_lower_triangular(
-            F_chol.T, at.linalg.solve_lower_triangular(F_chol, PZT.T)
-        ).T * (1 - all_nan_flag)
-        I_KZ = at.eye(K.shape[0]) - K.dot(Z)
+        K = solve_lower_triangular(F_chol.T, solve_lower_triangular(F_chol, PZT.T)).T * (
+            1 - all_nan_flag
+        )
+        I_KZ = pt.eye(K.shape[0]) - K.dot(Z)
 
         a_filtered = a + K.dot(v)
         P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)  # Joseph form
 
-        inner_term = at.linalg.solve_lower_triangular(
-            F_chol.T, at.linalg.solve_lower_triangular(F_chol, v)
-        )
+        inner_term = solve_lower_triangular(F_chol.T, solve_lower_triangular(F_chol, v))
         n = y.shape[0]
 
-        ll = at.switch(
+        ll = pt.switch(
             all_nan_flag,
             0.0,
-            -0.5 * (n * MVN_CONST + (v.T @ inner_term).ravel()) - at.log(at.diag(F_chol)).sum(),
+            -0.5 * (n * MVN_CONST + (v.T @ inner_term).ravel()) - pt.log(pt.diag(F_chol)).sum(),
         )
 
         return a_filtered, P_filtered, ll
 
 
 class SingleTimeseriesFilter(BaseFilter):
-    def build_graph(self, data, a0, P0, T, Z, R, H, Q) -> List[TensorVariable]:
-        """
-        Construct the computation graph for the Kalman filter. This differs from the base filter bceause the
-        _postprocess_scan_results function does not take Z or H.
-        """
+    """
+    If there is only a single observed timeseries, regardless of the number of hidden states, there is no need to
+    perform a matrix inversion anywhere in the filter.
+    """
 
-        results, updates = pytensor.scan(
-            self.kalman_step,
-            sequences=[data],
-            outputs_info=[None, a0, None, P0, None],
-            non_sequences=[T, Z, R, H, Q],
-            name="forward_kalman_pass",
-        )
-
-        filter_results = self._postprocess_scan_results(results, a0, P0)
-
-        return filter_results
-
-    def update(self, a, P, y, Z, H, all_nan_flag):
+    @staticmethod
+    def update(a, P, y, Z, H, all_nan_flag):
         # y, v are scalar, but a might not be
         y_hat = Z.dot(a).ravel()
         v = y - y_hat
@@ -212,23 +199,15 @@ class SingleTimeseriesFilter(BaseFilter):
         PZT = P.dot(Z.T)
 
         # F is scalar, K is a column vector
-        F = Z.dot(PZT).ravel() + H
+        F = (Z.dot(PZT) + H).ravel() + 1e-8
         K = PZT / F
 
         a_filtered = a + K * v
         P_filtered = P - P @ P / F
 
-        ll = -0.5 * (MVN_CONST + at.log(F) + v**2 / F)
+        ll = pt.switch(all_nan_flag, 0.0, -0.5 * (MVN_CONST + pt.log(F) + v**2 / F))
 
-        return a_filtered, P_filtered, ll  # y_hat, F, ll
-
-    def kalman_step(self, y, a, P, T, Z, R, H, Q):
-        # a_filtered, P_filtered, obs_mu, obs_cov, ll = self.update(y=y, a=a, P=P, Z=Z, H=H, all_nan_flag=False)
-        a_filtered, P_filtered, ll = self.update(y=y, a=a, P=P, Z=Z, H=H, all_nan_flag=False)
-
-        a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, T=T, R=R, Q=Q)
-
-        return a_filtered, a_hat, P_filtered, P_hat, ll  # obs_mu, obs_cov, ll
+        return a_filtered, P_filtered, ll
 
 
 class SteadyStateFilter(BaseFilter):
@@ -244,7 +223,7 @@ class SteadyStateFilter(BaseFilter):
     def build_graph(self, data, a0, P0, T, Z, R, H, Q):
         P_steady = solve_discrete_are(T.T, Z.T, matrix_dot(R, Q, R.T), H)
         F = matrix_dot(Z, P_steady, Z.T) + H
-        F_inv = at.linalg.solve(F, at.eye(F.shape[0]), assume_a="pos")
+        F_inv = pt.linalg.solve(F, pt.eye(F.shape[0]), assume_a="pos")
 
         results, updates = pytensor.scan(
             self.kalman_step,
@@ -269,16 +248,16 @@ class SteadyStateFilter(BaseFilter):
         F = Z.dot(PZT) + H
 
         K = PZT @ F_inv
-        I_KZ = at.eye(K.shape[0]) - K.dot(Z)
+        I_KZ = pt.eye(K.shape[0]) - K.dot(Z)
 
         a_filtered = a + K.dot(v)
         P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)  # Joseph form
 
         inner_term = matrix_dot(v.T, F_inv, v)
-        ll = at.switch(
+        ll = pt.switch(
             all_nan_flag,
             0.0,
-            -0.5 * (MVN_CONST + at.log(at.linalg.det(F)) + inner_term).ravel()[0],
+            -0.5 * (MVN_CONST + pt.log(pt.linalg.det(F)) + inner_term).ravel()[0],
         )
 
         return a_filtered, P_filtered, ll
@@ -295,14 +274,14 @@ class SteadyStateFilter(BaseFilter):
         """
 
         y = y[:, None]
-        nan_mask = at.isnan(y).ravel()
-        all_nan_flag = at.all(nan_mask).astype(pytensor.config.floatX)
+        nan_mask = pt.isnan(y).ravel()
+        all_nan_flag = pt.all(nan_mask).astype(pytensor.config.floatX)
 
-        W = at.set_subtensor(at.eye(y.shape[0])[nan_mask, nan_mask], 0.0)
+        W = pt.set_subtensor(pt.eye(y.shape[0])[nan_mask, nan_mask], 0.0)
 
         Z_masked = W.dot(Z)
         H_masked = W.dot(H)
-        y_masked = at.set_subtensor(y[nan_mask, :], 0.0)
+        y_masked = pt.set_subtensor(y[nan_mask, :], 0.0)
 
         a_filtered, P_filtered, ll = self.update(
             y=y_masked,
@@ -341,7 +320,7 @@ class UnivariateFilter(BaseFilter):
         PZT = P.dot(Z_row.T)
         F = Z_row.dot(PZT) + sigma_H
 
-        F_zero_flag = at.or_(at.eq(F, 0), nan_flag)
+        F_zero_flag = pt.or_(pt.eq(F, 0), nan_flag)
 
         # This should easier than trying to dodge the log(F) and 1 / F with a switch
         F = F + 1e-8 * F_zero_flag
@@ -350,24 +329,23 @@ class UnivariateFilter(BaseFilter):
         # K = 0, a = a, P = P, ll = 0
         K = PZT / F * (1 - F_zero_flag)
         a_filtered = a + K * v * (1 - F_zero_flag)
-        P_filtered = P - at.outer(K, K) * F * (1 - F_zero_flag)
-        ll_inner = (at.log(F) + v**2 / F) * (1 - F_zero_flag)
+        P_filtered = P - pt.outer(K, K) * F * (1 - F_zero_flag)
+        ll_inner = (pt.log(F) + v**2 / F) * (1 - F_zero_flag)
 
         return a_filtered, P_filtered, ll_inner
 
     def kalman_step(self, y, a, P, T, Z, R, H, Q):
-
         y = y[:, None]
-        nan_mask = at.isnan(y).ravel()
+        nan_mask = pt.isnan(y).ravel()
 
-        W = at.set_subtensor(at.eye(y.shape[0])[nan_mask, nan_mask], 0.0)
+        W = pt.set_subtensor(pt.eye(y.shape[0])[nan_mask, nan_mask], 0.0)
         Z_masked = W.dot(Z)
         H_masked = W.dot(H)
-        y_masked = at.set_subtensor(y[nan_mask], 0.0)
+        y_masked = pt.set_subtensor(y[nan_mask], 0.0)
 
         result, updates = pytensor.scan(
             self._univariate_inner_filter_step,
-            sequences=[y_masked, Z_masked, at.diag(H_masked), nan_mask],
+            sequences=[y_masked, Z_masked, pt.diag(H_masked), nan_mask],
             outputs_info=[a, P, None],
         )
 
@@ -376,6 +354,6 @@ class UnivariateFilter(BaseFilter):
 
         a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, T=T, R=R, Q=Q)
 
-        ll = -0.5 * ((at.neq(ll_inner, 0).sum()) * MVN_CONST + ll_inner.sum())
+        ll = -0.5 * ((pt.neq(ll_inner, 0).sum()) * MVN_CONST + ll_inner.sum())
 
         return a_filtered, a_hat, P_filtered, P_hat, ll
