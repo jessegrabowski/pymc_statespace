@@ -53,7 +53,7 @@ jobs:
         miniforge-version: latest
         mamba-version: "*"
         activate-environment: pymc-statespace
-        channel-priority: strict
+        channel-priority: flexible
         environment-file: conda_envs/pymc_statespace.yml
         python-version: 3.9
         use-mamba: true
