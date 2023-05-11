@@ -204,34 +204,6 @@ class SingleTimeseriesFilter(BaseFilter):
 
         return filter_results
 
-    @staticmethod
-    def _postprocess_scan_results(results, a0, P0, Z, H) -> List[TensorVariable]:
-        (
-            filtered_states,
-            predicted_states,
-            filtered_covariances,
-            predicted_covariances,
-            log_likelihoods,
-        ) = results
-        # obs_hat, cov_hat,\
-
-        # This follows the Statsmodels output, which appends x0 and P0 to the predicted states, but not to the
-        # filtered states
-        predicted_states = at.concatenate([a0[None], predicted_states], axis=0)
-        predicted_covariances = at.concatenate([P0[None], predicted_covariances], axis=0)
-
-        filter_results = [
-            filtered_states,
-            predicted_states,
-            filtered_covariances,
-            predicted_covariances,
-            # obs_hat, cov_hat,
-            log_likelihoods.sum(),
-            log_likelihoods,
-        ]
-
-        return [x.squeeze() for x in filter_results]
-
     def update(self, a, P, y, Z, H, all_nan_flag):
         # y, v are scalar, but a might not be
         y_hat = Z.dot(a).ravel()
