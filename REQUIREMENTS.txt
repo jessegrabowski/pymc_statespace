@@ -6,3 +6,4 @@ pandas
 xarray
 matplotlib
 arviz
+statsmodels

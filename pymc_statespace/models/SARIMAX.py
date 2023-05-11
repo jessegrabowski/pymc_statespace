@@ -4,7 +4,7 @@ import numpy as np
 import pytensor.tensor as at
 
 from pymc_statespace.core.statespace import PyMCStateSpace
-from pymc_statespace.utils.aesara_scipy import solve_discrete_lyapunov
+from pymc_statespace.utils.pytensor_scipy import solve_discrete_lyapunov
 
 
 class BayesianARMA(PyMCStateSpace):

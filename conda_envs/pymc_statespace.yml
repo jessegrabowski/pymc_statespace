@@ -12,6 +12,7 @@ dependencies:
   - xarray
   - matplotlib
   - arviz
+  - statsmodels
   # Testing dependencies
   - pre-commit
   - pytest-cov>=2.5
