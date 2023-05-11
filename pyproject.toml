@@ -1,0 +1,27 @@
+[tool.pytest.ini_options]
+minversion = "6.0"
+xfail_strict=true
+
+[tool.isort]
+profile = 'black'
+
+[tool.black]
+line-length = 100
+
+[tool.nbqa.mutate]
+isort = 1
+black = 1
+pyupgrade = 1
+
+[tool.bumpver]
+current_version = "0.0.1"
+version_pattern = "MAJOR.MINOR.PATCH"
+commit_message  = "Bump version {old_version} -> {new_version}"
+commit          = true
+tag             = true
+push            = false
+
+[tool.bumpver.file_patterns]
+"pyproject.toml" = ['current_version = "{version}"']
+"setup.cfg" = ['version = {version}']
+"gEconpy/__init__.py" = ["{version}"]

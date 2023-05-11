@@ -1,11 +1,11 @@
 # PyMC StateSpace
-A system for Bayesian estimation of state space models using PyMC 4.0. This package is designed to mirror the functionality of the Statsmodels.api `tsa.statespace` module, except within a Bayesian estimation framework. To accomplish this, PyMC Statespace has a Kalman filter written in Aesara, allowing the gradients of the iterative Kalman filter likelihood to be computed and provided to the PyMC NUTS sampler.
+A system for Bayesian estimation of state space models using PyMC 4.0. This package is designed to mirror the functionality of the Statsmodels.api `tsa.statespace` module, except within a Bayesian estimation framework. To accomplish this, PyMC Statespace has a Kalman filter written in Pytensor, allowing the gradients of the iterative Kalman filter likelihood to be computed and provided to the PyMC NUTS sampler.
 
 ## State Space Models
 This package follows Statsmodels in using the Durbin and Koopman (2012) nomenclature for a linear state space model. Under this nomenclature, the model is written as:
 
 <img src="svgs/4881244fda86ce9792cccafb3bb7eb0c.svg?invert_in_darkmode" align=middle width=258.9341501999999pt height=24.65753399999998pt/>
-<img src="svgs/17a925cbd243c9dd3ce20fd8558993f1.svg?invert_in_darkmode" align=middle width=293.57032319999996pt height=24.65753399999998pt/>
+<img src="svgs/17a925cbd243c9dd3ce20fd8558993f1.svg?invert_in_darkmode" align=middle width="293.57032319999996pt" height="24.65753399999998pt/">
 <img src="svgs/f566e90ed17c5292db4600846e0ace27.svg?invert_in_darkmode" align=middle width=108.89074349999999pt height=24.65753399999998pt/>
 
 The objects in the above equation have the following shapes and meanings:
@@ -31,7 +31,7 @@ The linear state space model is a workhorse in many disciplines, and is flexible
 
 ## Example Usage
 
-Currently, local level and ARMA models are implemented. To initialize a model, simply create a model object, provide data, and any additional arguments unique to that model. In addition, you can choose from several Kalman Filter implementations. Currently these are `standard`, `steady_state`, `univariate`, `single`, and `cholesky`. For more information, see the docs (they're on the to-do list) 
+Currently, local level and ARMA models are implemented. To initialize a model, simply create a model object, provide data, and any additional arguments unique to that model. In addition, you can choose from several Kalman Filter implementations. Currently these are `standard`, `steady_state`, `univariate`, `single`, and `cholesky`. For more information, see the docs (they're on the to-do list)
 ```python
 import pymc_statespace as pmss
 #make sure data is a 2d numpy array!
@@ -90,7 +90,7 @@ def param_names(self):
     return ['x0', 'P0', 'sigma_obs', 'sigma_state']
 ```
 
-`self.ssm` is an `AesaraRepresentation` class object that is created by the super constructor. Every model has a `self.ssm` and a `self.kalman_filter` created after the super constructor is called. All the matrices stored in `self.ssm` are Aesara tensor variables, but numpy arrays can be passed to them for convenience. Behind the scenes, they will be converted to Aesara tensors. 
+`self.ssm` is an `AesaraRepresentation` class object that is created by the super constructor. Every model has a `self.ssm` and a `self.kalman_filter` created after the super constructor is called. All the matrices stored in `self.ssm` are Aesara tensor variables, but numpy arrays can be passed to them for convenience. Behind the scenes, they will be converted to Aesara tensors.
 
 Note that the names of the matrices correspond to the names listed above. They are (in the same order):
 
@@ -117,6 +117,6 @@ def update(self, theta: at.TensorVariable) -> None:
     self.ssm['state_cov', np.diag_indices(2)] = theta[1:]
 ```
 
-This function is why the order matters when flattening and concatenating the random variables inside the PyMC model. In this case, we must first pass `sigma_obs`, followed by `sigma_level`, then `sigma_trend`. 
+This function is why the order matters when flattening and concatenating the random variables inside the PyMC model. In this case, we must first pass `sigma_obs`, followed by `sigma_level`, then `sigma_trend`.
 
 But that's it! Obviously this API isn't great, and will be subject to change as the package evolves, but it should be enough to get a motivated research going. Happy estimation, and let me know all the bugs you find by opening an issue.

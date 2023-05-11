@@ -1,6 +1,7 @@
-from numba import njit
-from pymc_statespace.utils.numba_linalg import numba_block_diagonal
 import numpy as np
+from numba import njit
+
+from pymc_statespace.utils.numba_linalg import numba_block_diagonal
 
 
 @njit
@@ -56,7 +57,7 @@ def simulate_statespace(T, Z, R, H, Q, n_steps):
 
 def unconditional_simulations(thetas, update_funcs, n_steps=100, n_simulations=100):
     samples, *_ = thetas[0].shape
-    _, _, T, Z, R, H, Q = [f(*[theta[0] for theta in thetas])[0] for f in update_funcs]
+    _, _, T, Z, R, H, Q = (f(*[theta[0] for theta in thetas])[0] for f in update_funcs)
     n_obs, n_states = Z.shape
 
     states = np.empty((samples * n_simulations, n_steps, n_states))
@@ -64,7 +65,7 @@ def unconditional_simulations(thetas, update_funcs, n_steps=100, n_simulations=1
 
     for i in range(samples):
         theta = [x[i] for x in thetas]
-        _, _, T, Z, R, H, Q = [f(*theta)[0] for f in update_funcs]
+        _, _, T, Z, R, H, Q = (f(*theta)[0] for f in update_funcs)
         for j in range(n_simulations):
             sim_state, sim_obs = simulate_statespace(T, Z, R, H, Q, n_steps=n_steps)
             states[i * n_simulations + j, :, :] = sim_state

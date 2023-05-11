@@ -1,5 +1,5 @@
 # PyMC StateSpace
-A system for Bayesian estimation of state space models using PyMC 4.0. This package is designed to mirror the functionality of the Statsmodels.api `tsa.statespace` module, except within a Bayesian estimation framework. To accomplish this, PyMC Statespace has a Kalman filter written in Aesara, allowing the gradients of the iterative Kalman filter likelihood to be computed and provided to the PyMC NUTS sampler.
+A system for Bayesian estimation of state space models using PyMC 4.0. This package is designed to mirror the functionality of the Statsmodels.api `tsa.statespace` module, except within a Bayesian estimation framework. To accomplish this, PyMC Statespace has a Kalman filter written in Pytensor, allowing the gradients of the iterative Kalman filter likelihood to be computed and provided to the PyMC NUTS sampler.
 
 ## State Space Models
 This package follows Statsmodels in using the Durbin and Koopman (2012) nomenclature for a linear state space model. Under this nomenclature, the model is written as:
@@ -31,7 +31,7 @@ The linear state space model is a workhorse in many disciplines, and is flexible
 
 ## Example Usage
 
-Currently, local level and ARMA models are implemented. To initialize a model, simply create a model object, provide data, and any additional arguments unique to that model. 
+Currently, local level and ARMA models are implemented. To initialize a model, simply create a model object, provide data, and any additional arguments unique to that model.
 ```python
 import pymc_statespace as pmss
 #make sure data is a 2d numpy array!
@@ -91,7 +91,7 @@ def param_names(self):
     return ['x0', 'P0', 'sigma_obs', 'sigma_state']
 ```
 
-`self.ssm` is an `AesaraRepresentation` class object that is created by the super constructor. Every model has a `self.ssm` and a `self.kalman_filter` created after the super constructor is called. All the matrices stored in `self.ssm` are Aesara tensor variables, but numpy arrays can be passed to them for convenience. Behind the scenes, they will be converted to Aesara tensors. 
+`self.ssm` is an `PytensorRepresentation` class object that is created by the super constructor. Every model has a `self.ssm` and a `self.kalman_filter` created after the super constructor is called. All the matrices stored in `self.ssm` are Pytensor tensor variables, but numpy arrays can be passed to them for convenience. Behind the scenes, they will be converted to Pytensor tensors.
 
 Note that the names of the matrices correspond to the names listed above. They are (in the same order):
 
@@ -107,7 +107,7 @@ Note that the names of the matrices correspond to the names listed above. They a
 
 Indexing by name only will expose the entire matrix. A name can also be followed by the usual numpy slice notation to get a specific element, row, or column.
 
-The user also needs to implement an `update` method, which takes in a single Aesara tensor as an argument. This method routes the parameters estimated by PyMC into the right spots in the state space matrices. The local level has at least two parameters to estimate: the variance of the level state innovations, and the variance of the trend state innovations. Here is the corresponding update method:
+The user also needs to implement an `update` method, which takes in a single Pytensor tensor as an argument. This method routes the parameters estimated by PyMC into the right spots in the state space matrices. The local level has at least two parameters to estimate: the variance of the level state innovations, and the variance of the trend state innovations. Here is the corresponding update method:
 
 ```python
 def update(self, theta: at.TensorVariable) -> None:

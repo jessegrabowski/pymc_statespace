@@ -1,7 +1,7 @@
-from .models.local_level import BayesianLocalLevel
-from .models.SARIMAX import BayesianARMA
+from pymc_statespace.models.local_level import BayesianLocalLevel
+from pymc_statespace.models.SARIMAX import BayesianARMA
 
 __all__ = [
-    'LocalLevelModel',
-    'BayesianARMA',
+    "LocalLevelModel",
+    "BayesianARMA",
 ]

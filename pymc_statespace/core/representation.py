@@ -1,34 +1,37 @@
-import pytensor.tensor as at
+from typing import List, Optional, Tuple, Type, Union
+
 import numpy as np
+import pytensor.tensor as at
 from numpy.typing import ArrayLike
-from typing import Optional, Tuple, List, Type, Union
 
 KeyLike = Union[Tuple[Union[str, int]], str]
 
 
 class PytensorRepresentation:
-    data = at.matrix(name='Data')
-    design = at.tensor3(name='design')
-    obs_cov = at.tensor3(name='obs_cov')
-    transition = at.tensor3(name='transition')
-    selection = at.tensor3(name='selection')
-    state_cov = at.tensor3(name='state_cov')
+    data = at.matrix(name="Data")
+    design = at.tensor3(name="design")
+    obs_cov = at.tensor3(name="obs_cov")
+    transition = at.tensor3(name="transition")
+    selection = at.tensor3(name="selection")
+    state_cov = at.tensor3(name="state_cov")
 
-    def __init__(self,
-                 data: ArrayLike,
-                 k_states: int,
-                 k_posdef: int,
-                 design: Optional[ArrayLike] = None,
-                 obs_intercept: Optional[ArrayLike] = None,
-                 obs_cov=None,
-                 transition=None,
-                 state_intercept=None,
-                 selection=None,
-                 state_cov=None,
-                 initial_state=None,
-                 initial_state_cov=None) -> None:
+    def __init__(
+        self,
+        data: ArrayLike,
+        k_states: int,
+        k_posdef: int,
+        design: Optional[ArrayLike] = None,
+        obs_intercept: Optional[ArrayLike] = None,
+        obs_cov=None,
+        transition=None,
+        state_intercept=None,
+        selection=None,
+        state_cov=None,
+        initial_state=None,
+        initial_state_cov=None,
+    ) -> None:
         """
-        A representation of a State Space model, in Aesara. Shamelessly copied from the Statsmodels.api implementation
+        A representation of a State Space model, in Pytensor. Shamelessly copied from the Statsmodels.api implementation
         found here:
 
         https://github.com/statsmodels/statsmodels/blob/main/statsmodels/tsa/statespace/representation.py
@@ -81,23 +84,23 @@ class PytensorRepresentation:
 
         # The last dimension is for time varying matrices; it could be n_obs. Not thinking about that now.
         self.shapes = {
-            'data': (self.k_endog, self.n_obs),
-            'design': (self.k_endog, self.k_states, 1),
-            'obs_intercept': (self.k_endog, 1),
-            'obs_cov': (self.k_endog, self.k_endog, 1),
-            'transition': (self.k_states, self.k_states, 1),
-            'state_intercept': (self.k_states, 1),
-            'selection': (self.k_states, self.k_posdef, 1),
-            'state_cov': (self.k_posdef, self.k_posdef, 1),
-            'initial_state': (self.k_states, 1, 1),
-            'initial_state_cov': (self.k_states, self.k_states, 1)
+            "data": (self.k_endog, self.n_obs),
+            "design": (self.k_endog, self.k_states, 1),
+            "obs_intercept": (self.k_endog, 1),
+            "obs_cov": (self.k_endog, self.k_endog, 1),
+            "transition": (self.k_states, self.k_states, 1),
+            "state_intercept": (self.k_states, 1),
+            "selection": (self.k_states, self.k_posdef, 1),
+            "state_cov": (self.k_posdef, self.k_posdef, 1),
+            "initial_state": (self.k_states, 1, 1),
+            "initial_state_cov": (self.k_states, self.k_states, 1),
         }
 
         # Initialize the representation matrices
         # TODO: Can this API be improved (using scope and setattr seems hacky?)
         scope = locals()
         for name, shape in self.shapes.items():
-            if name == 'data':
+            if name == "data":
                 continue
             setattr(self, name, at.zeros(shape))
             #             setattr(self, name, np.zeros(shape))
@@ -108,16 +111,18 @@ class PytensorRepresentation:
 
     def _validate_key(self, key: KeyLike) -> None:
         if key not in self.shapes:
-            raise IndexError(f'{key} is an invalid state space matrix name')
+            raise IndexError(f"{key} is an invalid state space matrix name")
 
-    def _add_time_dim_to_slice(self, name: str, slice_: Union[List[int], Tuple[int]], n_dim: int) -> Tuple[int]:
+    def _add_time_dim_to_slice(
+        self, name: str, slice_: Union[List[int], Tuple[int]], n_dim: int
+    ) -> Tuple[int]:
         if self.shapes[name][-1] == 1 and len(slice_) <= (n_dim - 1):
             return tuple(slice_) + (0,)
 
     @staticmethod
     def _validate_key_and_get_type(key: KeyLike) -> Type[str]:
         if isinstance(key, tuple) and not isinstance(key[0], str):
-            raise IndexError('First index must the name of a valid state space matrix.')
+            raise IndexError("First index must the name of a valid state space matrix.")
 
         return type(key)
 
@@ -128,7 +133,9 @@ class PytensorRepresentation:
         # Assume X is always 2d, even if there is a time-varying component, i.e. X always gives
         # the constant values over time.
         if expected_shape != X.shape:
-            raise ValueError(f'Array provided for {name} has shape {X.shape}, expected {expected_shape}')
+            raise ValueError(
+                f"Array provided for {name} has shape {X.shape}, expected {expected_shape}"
+            )
 
     def _numpy_to_aesara(self, name: str, X: ArrayLike) -> at.TensorVariable:
         self._validate_matrix_shape(name, X)
@@ -164,7 +171,7 @@ class PytensorRepresentation:
 
         # Case 3: There is only one slice index, but it's not a string
         else:
-            raise IndexError('First index must the name of a valid state space matrix.')
+            raise IndexError("First index must the name of a valid state space matrix.")
 
     def __setitem__(self, key: KeyLike, value: Union[float, int, ArrayLike]) -> None:
         _type = type(key)

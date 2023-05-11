@@ -1,5 +1,5 @@
-import statsmodels.api as sm
 import numpy as np
+import statsmodels.api as sm
 
 
 class LocalLinearTrend(sm.tsa.statespace.MLEModel):
@@ -8,26 +8,23 @@ class LocalLinearTrend(sm.tsa.statespace.MLEModel):
         k_states = k_posdef = 2
 
         # Initialize the statespace
-        super(LocalLinearTrend, self).__init__(
-            endog, k_states=k_states, k_posdef=k_posdef, **kwargs
-        )
+        super().__init__(endog, k_states=k_states, k_posdef=k_posdef, **kwargs)
 
         # Initialize the matrices
-        self.ssm['design'] = np.array([1, 0])
-        self.ssm['transition'] = np.array([[1, 1],
-                                           [0, 1]])
-        self.ssm['selection'] = np.eye(k_states)
+        self.ssm["design"] = np.array([1, 0])
+        self.ssm["transition"] = np.array([[1, 1], [0, 1]])
+        self.ssm["selection"] = np.eye(k_states)
 
         # Cache some indices
-        self._state_cov_idx = ('state_cov',) + np.diag_indices(k_posdef)
+        self._state_cov_idx = ("state_cov",) + np.diag_indices(k_posdef)
 
     @property
     def param_names(self):
-        return ['sigma2.measurement', 'sigma2.level', 'sigma2.trend']
+        return ["sigma2.measurement", "sigma2.level", "sigma2.trend"]
 
     @property
     def start_params(self):
-        return [np.std(self.endog)]*3
+        return [np.std(self.endog)] * 3
 
     def transform_params(self, unconstrained):
         return unconstrained**2
@@ -36,10 +33,10 @@ class LocalLinearTrend(sm.tsa.statespace.MLEModel):
         return constrained**0.5
 
     def update(self, params, *args, **kwargs):
-        params = super(LocalLinearTrend, self).update(params, *args, **kwargs)
+        params = super().update(params, *args, **kwargs)
 
         # Observation covariance
-        self.ssm['obs_cov',0,0] = params[0]
+        self.ssm["obs_cov", 0, 0] = params[0]
 
         # State covariance
         self.ssm[self._state_cov_idx] = params[1:]

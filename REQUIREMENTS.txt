@@ -1,0 +1,8 @@
+pymc>=5.2
+pytensor
+numba>=0.57
+numpy
+pandas
+xarray
+matplotlib
+arviz

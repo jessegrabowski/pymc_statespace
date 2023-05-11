@@ -1,24 +1,38 @@
-import pytensor.tensor as at
-import pytensor
-
-from pymc_statespace.filters import StandardFilter, UnivariateFilter, SteadyStateFilter, KalmanSmoother, SingleTimeseriesFilter, CholeskyFilter
-from pymc_statespace.core.representation import PytensorRepresentation
-from pymc_statespace.utils.simulation import conditional_simulation, unconditional_simulations
-from warnings import simplefilter, catch_warnings
+from typing import List, Optional, Tuple, Union
+from warnings import catch_warnings, simplefilter
 
 import numpy as np
-from numpy.typing import ArrayLike
-from typing import Optional, Tuple, List, Union
-
-from pymc.model import modelcontext
 import pymc as pm
+import pytensor
+import pytensor.tensor as at
+from numpy.typing import ArrayLike
+from pymc.model import modelcontext
 
-FILTER_FACTORY = {'standard': StandardFilter, 'univariate': UnivariateFilter, 'steady_state': SteadyStateFilter,
-                  'single':SingleTimeseriesFilter, 'cholesky':CholeskyFilter}
+from pymc_statespace.core.representation import PytensorRepresentation
+from pymc_statespace.filters import (
+    CholeskyFilter,
+    KalmanSmoother,
+    SingleTimeseriesFilter,
+    StandardFilter,
+    SteadyStateFilter,
+    UnivariateFilter,
+)
+from pymc_statespace.utils.simulation import (
+    conditional_simulation,
+    unconditional_simulations,
+)
+
+FILTER_FACTORY = {
+    "standard": StandardFilter,
+    "univariate": UnivariateFilter,
+    "steady_state": SteadyStateFilter,
+    "single": SingleTimeseriesFilter,
+    "cholesky": CholeskyFilter,
+}
 
 
 class PyMCStateSpace:
-    def __init__(self, data, k_states, k_posdef, filter_type='standard'):
+    def __init__(self, data, k_states, k_posdef, filter_type="standard"):
         self.data = data
         self.n_obs, self.k_endog = data.shape
         self.k_states = k_states
@@ -28,15 +42,17 @@ class PyMCStateSpace:
         self.ssm = PytensorRepresentation(data, k_states, k_posdef)
 
         if filter_type.lower() not in FILTER_FACTORY.keys():
-            raise NotImplementedError('The following are valid filter types: ' + ', '.join(list(FILTER_FACTORY.keys())))
+            raise NotImplementedError(
+                "The following are valid filter types: " + ", ".join(list(FILTER_FACTORY.keys()))
+            )
 
-        if filter_type == 'single' and self.k_endog > 1:
+        if filter_type == "single" and self.k_endog > 1:
             raise ValueError('Cannot use filter_type = "single" with multiple observed time series')
 
         self.kalman_filter = FILTER_FACTORY[filter_type.lower()]()
         self.kalman_smoother = KalmanSmoother()
 
-        # Placeholders for the aesara functions that will return the predicted state, covariance, and log likelihood
+        # Placeholders for the pytensor functions that will return the predicted state, covariance, and log likelihood
         # given parameter vector theta
 
         self.log_likelihood = None
@@ -49,13 +65,13 @@ class PyMCStateSpace:
         self.predicted_covariances = None
 
     def unpack_statespace(self):
-        a0 = self.ssm['initial_state']
-        P0 = self.ssm['initial_state_cov']
-        T = self.ssm['transition']
-        Z = self.ssm['design']
-        R = self.ssm['selection']
-        H = self.ssm['obs_cov']
-        Q = self.ssm['state_cov']
+        a0 = self.ssm["initial_state"]
+        P0 = self.ssm["initial_state_cov"]
+        T = self.ssm["transition"]
+        Z = self.ssm["design"]
+        R = self.ssm["selection"]
+        H = self.ssm["obs_cov"]
+        Q = self.ssm["state_cov"]
 
         return a0, P0, T, Z, R, H, Q
 
@@ -105,9 +121,10 @@ class PyMCStateSpace:
 
         missing_params = set(self.param_names) - set(found_params)
         if len(missing_params) > 0:
-            raise ValueError("The following required model parameters were not found in the PyMC model:" + ', '.join(
-                param for param in list(missing_params)
-            ))
+            raise ValueError(
+                "The following required model parameters were not found in the PyMC model:"
+                + ", ".join(param for param in list(missing_params))
+            )
         return at.concatenate(theta)
 
     def build_statespace_graph(self) -> None:
@@ -121,34 +138,39 @@ class PyMCStateSpace:
             theta = self.gather_required_random_variables()
             self.update(theta)
 
-
             # filtered_states, predicted_states, smoothed_states, \
             # filtered_covariances, predicted_covariances, smoothed_covariances, \
             # log_likelihood, ll_obs = self.kalman_filter.build_graph(at.as_tensor_variable(self.data),
             #                                                         *self.unpack_statespace())
 
-            filtered_states, predicted_states, \
-                filtered_covariances, predicted_covariances,\
-                log_likelihood, ll_obs = self.kalman_filter.build_graph(at.as_tensor_variable(self.data),
-                                                                        *self.unpack_statespace())
+            (
+                filtered_states,
+                predicted_states,
+                filtered_covariances,
+                predicted_covariances,
+                log_likelihood,
+                ll_obs,
+            ) = self.kalman_filter.build_graph(
+                at.as_tensor_variable(self.data), *self.unpack_statespace()
+            )
 
-            pm.Deterministic('filtered_states', filtered_states)
-            pm.Deterministic('predicted_states', predicted_states)
+            pm.Deterministic("filtered_states", filtered_states)
+            pm.Deterministic("predicted_states", predicted_states)
             # pm.Deterministic('smoothed_states', smoothed_states)
 
-            pm.Deterministic('predicted_covariances', predicted_covariances)
-            pm.Deterministic('filtered_covariances', filtered_covariances)
+            pm.Deterministic("predicted_covariances", predicted_covariances)
+            pm.Deterministic("filtered_covariances", filtered_covariances)
             # pm.Deterministic('smoothed_covariances', smoothed_covariances)
 
-            pm.Potential('log_likelihood', log_likelihood)
+            pm.Potential("log_likelihood", log_likelihood)
 
             # return self.kalman_filter.build_graph(at.as_tensor_variable(self.data),
             #                                       *self.unpack_statespace())
 
     @staticmethod
-    def sample_conditional_prior(filter_output='filtered',
-                                 n_simulations=100,
-                                 prior_samples=500) -> ArrayLike:
+    def sample_conditional_prior(
+        filter_output="filtered", n_simulations=100, prior_samples=500
+    ) -> ArrayLike:
         """
         Sample from the conditional prior; that is, given parameter draws from the prior distribution, compute kalman
         filtered trajectories. Trajectories are drawn from a single multivariate normal with mean and covariance
@@ -172,31 +194,40 @@ class PyMCStateSpace:
             A numpy array of shape (n_simulations x prior_samples, n_timesteps, n_states) with simulated trajectories.
 
         """
-        if filter_output.lower() not in ['filtered', 'predicted', 'smoothed']:
+        if filter_output.lower() not in ["filtered", "predicted", "smoothed"]:
             raise ValueError(
-                f'filter_output should be one of filtered, predicted, or smoothed, recieved {filter_output}')
+                f"filter_output should be one of filtered, predicted, or smoothed, recieved {filter_output}"
+            )
 
         pymc_model = modelcontext(None)
         with pymc_model:
             with catch_warnings():
-                simplefilter('ignore', category=UserWarning)
-                cond_prior = pm.sample_prior_predictive(samples=prior_samples,
-                                                        var_names=[f'{filter_output}_states',
-                                                                   f'{filter_output}_covariances'])
+                simplefilter("ignore", category=UserWarning)
+                cond_prior = pm.sample_prior_predictive(
+                    samples=prior_samples,
+                    var_names=[
+                        f"{filter_output}_states",
+                        f"{filter_output}_covariances",
+                    ],
+                )
 
-        _, _, n, k, *_ = cond_prior.prior[f'{filter_output}_states'].shape
-        mus = cond_prior.prior[f'{filter_output}_states'].values.squeeze().reshape(-1, n * k)
-        covs = cond_prior.prior[f'{filter_output}_covariances'].values.squeeze().reshape(-1, n, k, k)
+        _, _, n, k, *_ = cond_prior.prior[f"{filter_output}_states"].shape
+        mus = cond_prior.prior[f"{filter_output}_states"].values.squeeze().reshape(-1, n * k)
+        covs = (
+            cond_prior.prior[f"{filter_output}_covariances"].values.squeeze().reshape(-1, n, k, k)
+        )
 
         simulations = conditional_simulation(mus, covs, n, k, n_simulations)
 
         return simulations
 
     @staticmethod
-    def sample_conditional_posterior(trace,
-                                     filter_output: str = 'filtered',
-                                     n_simulations: int = 100,
-                                     posterior_samples: Optional[Union[float, int]] = None):
+    def sample_conditional_posterior(
+        trace,
+        filter_output: str = "filtered",
+        n_simulations: int = 100,
+        posterior_samples: Optional[Union[float, int]] = None,
+    ):
         """
         Sample from the conditional posterior; that is, given parameter draws from the posterior distribution,
         compute kalman filtered trajectories. Trajectories are drawn from a single multivariate normal with mean and
@@ -223,16 +254,19 @@ class PyMCStateSpace:
             A numpy array of shape (n_simulations x prior_samples, n_timesteps, n_states) with simulated trajectories.
 
         """
-        if filter_output.lower() not in ['filtered', 'predicted', 'smoothed']:
+        if filter_output.lower() not in ["filtered", "predicted", "smoothed"]:
             raise ValueError(
-                f'filter_output should be one of filtered, predicted, or smoothed, recieved {filter_output}')
+                f"filter_output should be one of filtered, predicted, or smoothed, recieved {filter_output}"
+            )
 
-        chains, draws, n, k, *_ = trace.posterior[f'{filter_output}_states'].shape
+        chains, draws, n, k, *_ = trace.posterior[f"{filter_output}_states"].shape
         posterior_size = chains * draws
         if isinstance(posterior_samples, float):
             if posterior_samples > 1.0 or posterior_samples < 0.0:
-                raise ValueError('If posterior_samples is a float, it should be between 0 and 1, representing the '
-                                 'fraction of total posterior samples to re-sample.')
+                raise ValueError(
+                    "If posterior_samples is a float, it should be between 0 and 1, representing the "
+                    "fraction of total posterior samples to re-sample."
+                )
             posterior_samples = int(np.floor(posterior_samples * posterior_size))
 
         elif posterior_samples is None:
@@ -240,17 +274,24 @@ class PyMCStateSpace:
 
         resample_idxs = np.random.randint(0, posterior_size, size=posterior_samples)
 
-        mus = trace.posterior[f'{filter_output}_states'].values.squeeze().reshape(-1, n * k)[resample_idxs]
-        covs = trace.posterior[f'{filter_output}_covariances'].values.squeeze().reshape(-1, n, k, k)[resample_idxs]
+        mus = (
+            trace.posterior[f"{filter_output}_states"]
+            .values.squeeze()
+            .reshape(-1, n * k)[resample_idxs]
+        )
+        covs = (
+            trace.posterior[f"{filter_output}_covariances"]
+            .values.squeeze()
+            .reshape(-1, n, k, k)[resample_idxs]
+        )
 
         simulations = conditional_simulation(mus, covs, n, k, n_simulations)
 
         return simulations
 
-    def sample_unconditional_prior(self,
-                                   n_steps=100,
-                                   n_simulations=100,
-                                   prior_samples=500) -> Tuple[ArrayLike, ArrayLike]:
+    def sample_unconditional_prior(
+        self, n_steps=100, n_simulations=100, prior_samples=500
+    ) -> Tuple[ArrayLike, ArrayLike]:
         """
         Draw unconditional sample trajectories according to state space dynamics, using random samples from the prior
         distribution over model parameters. The state space update equations are:
@@ -281,8 +322,10 @@ class PyMCStateSpace:
 
         with pymc_model:
             with catch_warnings():
-                simplefilter('ignore', category=UserWarning)
-                prior_params = pm.sample_prior_predictive(var_names=self.param_names, samples=prior_samples)
+                simplefilter("ignore", category=UserWarning)
+                prior_params = pm.sample_prior_predictive(
+                    var_names=self.param_names, samples=prior_samples
+                )
 
         rvs_on_graph = []
         with pymc_model:
@@ -295,20 +338,22 @@ class PyMCStateSpace:
                         rvs_on_graph.append(param)
 
         # TODO: This is pretty hacky, ask on the forums if there is a better solution
-        matrix_update_funcs = [pytensor.function(rvs_on_graph, [X], on_unused_input='ignore') for X in
-                               self.unpack_statespace()]
+        matrix_update_funcs = [
+            pytensor.function(rvs_on_graph, [X], on_unused_input="ignore")
+            for X in self.unpack_statespace()
+        ]
 
         # Take the 0th element to remove the chain dimension
         thetas = [prior_params.prior[var].values[0] for var in self.param_names]
-        simulated_states, simulated_data = unconditional_simulations(thetas, matrix_update_funcs,
-                                                                     n_steps=n_steps, n_simulations=n_simulations)
+        simulated_states, simulated_data = unconditional_simulations(
+            thetas, matrix_update_funcs, n_steps=n_steps, n_simulations=n_simulations
+        )
 
         return simulated_states, simulated_data
 
-    def sample_unconditional_posterior(self, trace,
-                                       n_steps=100,
-                                       n_simulations=100,
-                                       posterior_samples=None) -> Tuple[ArrayLike, ArrayLike]:
+    def sample_unconditional_posterior(
+        self, trace, n_steps=100, n_simulations=100, posterior_samples=None
+    ) -> Tuple[ArrayLike, ArrayLike]:
         """
         Draw unconditional sample trajectories according to state space dynamics, using random samples from the
         posterior distribution over model parameters. The state space update equations are:
@@ -336,14 +381,16 @@ class PyMCStateSpace:
 
         """
 
-        chains = trace.posterior.dims['chain']
-        draws = trace.posterior.dims['draw']
+        chains = trace.posterior.dims["chain"]
+        draws = trace.posterior.dims["draw"]
 
         posterior_size = chains * draws
         if isinstance(posterior_samples, float):
             if posterior_samples > 1.0 or posterior_samples < 0.0:
-                raise ValueError('If posterior_samples is a float, it should be between 0 and 1, representing the '
-                                 'fraction of total posterior samples to re-sample.')
+                raise ValueError(
+                    "If posterior_samples is a float, it should be between 0 and 1, representing the "
+                    "fraction of total posterior samples to re-sample."
+                )
             posterior_samples = int(np.floor(posterior_samples * posterior_size))
 
         elif posterior_samples is None:
@@ -363,13 +410,16 @@ class PyMCStateSpace:
                     if param.name == param_name:
                         rvs_on_graph.append(param)
 
-        matrix_update_funcs = [pytensor.function(rvs_on_graph, [X], on_unused_input='ignore') for X in
-                               self.unpack_statespace()]
+        matrix_update_funcs = [
+            pytensor.function(rvs_on_graph, [X], on_unused_input="ignore")
+            for X in self.unpack_statespace()
+        ]
 
         thetas = [trace.posterior[var].values for var in self.param_names]
         thetas = [arr.reshape(-1, *arr.shape[2:])[resample_idxs] for arr in thetas]
 
-        simulated_states, simulated_data = unconditional_simulations(thetas, matrix_update_funcs,
-                                                                     n_steps=n_steps, n_simulations=n_simulations)
+        simulated_states, simulated_data = unconditional_simulations(
+            thetas, matrix_update_funcs, n_steps=n_steps, n_simulations=n_simulations
+        )
 
         return simulated_states, simulated_data

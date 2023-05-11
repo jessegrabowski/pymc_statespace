@@ -8,18 +8,18 @@ class KalmanSmoother:
         a_last = filtered_states[-1]
         P_last = filtered_covariances[-1]
 
-        smoother_result, updates = pytensor.scan(self.smoother_step,
-                                               sequences=[filtered_states[:-1],
-                                                          filtered_covariances[:-1]],
-                                               outputs_info=[a_last, P_last],
-                                               non_sequences=[T, R, Q],
-                                               go_backwards=True,
-                                               name='kalman_smoother')
+        smoother_result, updates = pytensor.scan(
+            self.smoother_step,
+            sequences=[filtered_states[:-1], filtered_covariances[:-1]],
+            outputs_info=[a_last, P_last],
+            non_sequences=[T, R, Q],
+            go_backwards=True,
+            name="kalman_smoother",
+        )
 
         smoothed_states, smoothed_covariances = smoother_result
         smoothed_states = at.concatenate([smoothed_states[::-1], a_last[None]], axis=0)
-        smoothed_covariances = at.concatenate([smoothed_covariances[::-1],
-                                               P_last[None]], axis=0)
+        smoothed_covariances = at.concatenate([smoothed_covariances[::-1], P_last[None]], axis=0)
 
         return smoothed_states, smoothed_covariances
 
@@ -32,7 +32,7 @@ class KalmanSmoother:
         a_smooth_next = a + smoother_gain @ (a_smooth - a_hat)
         P_smooth_next = P + matrix_dot(smoother_gain, P_smooth - P_hat, smoother_gain.T)
 
-        return a_smooth_next, P_smooth_next#
+        return a_smooth_next, P_smooth_next  #
 
     @staticmethod
     def predict(a, P, T, R, Q):
@@ -45,7 +45,7 @@ class KalmanSmoother:
 # class UnivariateKalmanSmoother:
 #
 #     def build_graph(self, T, R, Q, predicted_states, predicted_covariances):
-#         smoother_result, updates = aesara.scan(self.smoother_step,
+#         smoother_result, updates = pytensor.scan(self.smoother_step,
 #                                                sequences=[predicted_states[:-1],
 #                                                           predicted_covariances[:-1],
 #                                                           v_history, F_history, K_history],
@@ -73,7 +73,7 @@ class KalmanSmoother:
 #         return r_next, N_next
 #
 #     def smoother_step(self, a, P, v, F, K, r_t, N_t, T, Z):
-#         results, updates = aesara.scan(self._univariate_inner_smoother_step,
+#         results, updates = pytensor.scan(self._univariate_inner_smoother_step,
 #                                        sequences=[v, F, K, Z],
 #                                        outputs_info=[r_t, N_t],
 #                                        non_sequences=[T])

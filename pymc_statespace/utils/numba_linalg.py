@@ -1,5 +1,6 @@
-from numba import njit
 import numpy as np
+from numba import njit
+
 
 @njit
 def numba_block_diagonal(nd_array):
@@ -9,8 +10,7 @@ def numba_block_diagonal(nd_array):
 
     r, c = 0, 0
     for i, (rr, cc) in enumerate([(rows, cols)] * n):
-        out[r:r + rr, c:c + cc] = nd_array[i]
+        out[r : r + rr, c : c + cc] = nd_array[i]
         r += rr
         c += cc
     return out
-
