@@ -1,7 +1,6 @@
 name: pymc-statespace
 channels:
 - conda-forge
-- numba
 dependencies:
   # Base dependencies
   - pymc

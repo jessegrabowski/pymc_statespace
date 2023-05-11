@@ -1,5 +1,5 @@
 import pytensor
-import pytensor.tensor as at
+import pytensor.tensor as pt
 from pytensor.tensor.nlinalg import matrix_dot
 
 
@@ -18,8 +18,8 @@ class KalmanSmoother:
         )
 
         smoothed_states, smoothed_covariances = smoother_result
-        smoothed_states = at.concatenate([smoothed_states[::-1], a_last[None]], axis=0)
-        smoothed_covariances = at.concatenate([smoothed_covariances[::-1], P_last[None]], axis=0)
+        smoothed_states = pt.concatenate([smoothed_states[::-1], pt.atleast_3d(a_last)], axis=0)
+        smoothed_covariances = pt.concatenate([smoothed_covariances[::-1], pt.atleast_3d(P_last)], axis=0)
 
         return smoothed_states, smoothed_covariances
 
@@ -27,9 +27,9 @@ class KalmanSmoother:
         a_hat, P_hat = self.predict(a, P, T, R, Q)
 
         # Use pinv, otherwise P_hat is singular when there is missing data
-        smoother_gain = matrix_dot(at.linalg.pinv(P_hat), T, P).T
-
+        smoother_gain = matrix_dot(pt.linalg.pinv(P_hat), T, P).T
         a_smooth_next = a + smoother_gain @ (a_smooth - a_hat)
+
         P_smooth_next = P + matrix_dot(smoother_gain, P_smooth - P_hat, smoother_gain.T)
 
         return a_smooth_next, P_smooth_next  #
@@ -49,14 +49,14 @@ class KalmanSmoother:
 #                                                sequences=[predicted_states[:-1],
 #                                                           predicted_covariances[:-1],
 #                                                           v_history, F_history, K_history],
-#                                                outputs_info=[None, at.zeros_like(a0), None, at.zeros_like(P0)],
+#                                                outputs_info=[None, pt.zeros_like(a0), None, pt.zeros_like(P0)],
 #                                                non_sequences=[T, Z],
 #                                                go_backwards=True,
 #                                                name='backward_kalman_pass')
 #
 #         smoothed_states, _, smoothed_covariances, _ = smoother_result
-#         smoothed_states = at.concatenate([smoothed_states[::-1], predicted_states[-1][None]], axis=0)[:-1]
-#         smoothed_covariances = at.concatenate([smoothed_covariances[::-1],
+#         smoothed_states = pt.concatenate([smoothed_states[::-1], predicted_states[-1][None]], axis=0)[:-1]
+#         smoothed_covariances = pt.concatenate([smoothed_covariances[::-1],
 #                                                predicted_covariances[-1][None]], axis=0)[:-1]
 #
 #         return smoothed_states, smoothed_covariances
@@ -64,7 +64,7 @@ class KalmanSmoother:
 #     @staticmethod
 #     def _univariate_inner_smoother_step(v, F, K, Z, r_p, N_p, T):
 #         Z_row = Z[None, :]
-#         L = at.eye(T.shape[0]) - K @ Z_row
+#         L = pt.eye(T.shape[0]) - K @ Z_row
 #         ZTF_inv = Z_row.T / F
 #
 #         r_next = ZTF_inv * v + L.T @ r_p

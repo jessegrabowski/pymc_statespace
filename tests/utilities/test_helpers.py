@@ -16,7 +16,7 @@ nile_data["x"] = nile_data["x"].astype(float)
 
 def initialize_filter(kfilter):
     ksmoother = KalmanSmoother()
-    data = pt.matrix()
+    data = pt.dtensor3()
     a0 = pt.matrix()
     P0 = pt.matrix()
     Q = pt.matrix()
@@ -60,73 +60,40 @@ def add_missing_data(data, n_missing):
     return data
 
 
-def make_test_inputs(p, m, r, n, missing_data=None):
-    data = np.arange(n * p, dtype="float").reshape(-1, p)
+def make_test_inputs(p, m, r, n, missing_data=None, H_is_zero=False):
+    data = np.arange(n * p, dtype="float").reshape(-1, p, 1)
     if missing_data is not None:
         data = add_missing_data(data, missing_data)
 
     a0 = np.zeros((m, 1))
     P0 = np.eye(m)
-    Q = np.ones((r, r))
-    H = np.ones((p, p))
-    T = np.ones((m, m))
-    R = np.ones((m, r))
-    Z = np.ones((p, m))
+    Q = np.eye(r)
+    H = np.zeros((p, p)) if H_is_zero else np.eye(p)
+    T = np.eye(m)
+    R = np.eye(m)[:, :r]
+    Z = np.eye(m)[:p, :]
 
     inputs = [data, a0, P0, T, Z, R, H, Q]
 
     return inputs
 
 
-def filter_output_shapes_test_helper(outputs, data, p, m, r, n):
-    (
-        filtered_states,
-        predicted_states,
-        smoothed_states,
-        filtered_covs,
-        predicted_covs,
-        smoothed_covs,
-        log_likelihood,
-        ll_obs,
-    ) = outputs
-
-    assert filtered_states.shape == (n, m, 1)
-    assert predicted_states.shape == (n + 1, m, 1)
-    assert smoothed_states.shape == (n, m, 1)
-
-    assert filtered_covs.shape == (n, m, m)
-    assert predicted_covs.shape == (n + 1, m, m)
-    assert smoothed_covs.shape == (n, m, m)
-
-    assert ll_obs.ravel().shape == data.ravel().shape
-    assert log_likelihood.shape == ()
-
-
-def no_missing_outputs_helper(outputs):
-    (
-        filtered_states,
-        predicted_states,
-        smoothed_states,
-        filtered_covs,
-        predicted_covs,
-        smoothed_covs,
-        log_likelihood,
-        ll_obs,
-    ) = outputs
-
-    assert not np.any(np.isnan(filtered_states))
-    assert not np.any(np.isnan(predicted_states))
-    assert not np.any(np.isnan(smoothed_states))
-
-    assert not np.any(np.isnan(filtered_covs))
-    assert not np.any(np.isnan(predicted_covs))
-    assert not np.any(np.isnan(smoothed_covs))
-
-    assert not np.any(np.isnan(ll_obs))
+def get_expected_shape(name, p, m, r, n):
+    if name == 'log_likelihood':
+        return ()
+    elif name == 'll_obs':
+        return n,
+    filter_type, variable = name.split('_')
+    if filter_type == 'predicted':
+        n += 1
+    if variable == 'states':
+        return n, m, 1
+    if variable == 'covs':
+        return n, m, m
 
 
 def nile_test_test_helper(
-    filter_func, test_ll=True, test_states=False, n_missing=0, **allclose_kwargs
+        filter_func, test_ll=True, test_states=False, n_missing=0, **allclose_kwargs
 ):
     a0 = np.zeros((2, 1))
     P0 = np.eye(2) * 1e6
@@ -155,8 +122,8 @@ def nile_test_test_helper(
         predicted_covs,
         smoothed_covs,
         log_likelihood,
-        ll_obs,
-    ) = filter_func(data, a0, P0, T, Z, R, H, Q)
+        ll_obs
+    ) = filter_func(data[..., None], a0, P0, T, Z, R, H, Q)
 
     res = sm_model.fit_constrained(
         constraints={

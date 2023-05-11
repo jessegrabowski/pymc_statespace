@@ -17,6 +17,9 @@ assert_data_is_1d = Assert("UnivariateTimeSeries filter requires data be at most
 
 
 class BaseFilter(ABC):
+    def check_params(self, data, a0, P0, T, Z, R, H, Q):
+        return data, a0, P0, T, Z, R, H, Q
+
     def build_graph(self, data, a0, P0, T, Z, R, H, Q) -> List[TensorVariable]:
         """
         Construct the computation graph for the Kalman filter. [1] recommends taking the mean of the log-likelihood
@@ -28,6 +31,8 @@ class BaseFilter(ABC):
            Econometrics Journal 2 (1): 107-60. doi:10.1111/1368-423X.00023.
         TODO: Add a check for time-varying matrices (ndim > 2) and add matrices to scan sequences if so.
         """
+
+        data, a0, P0, T, Z, R, H, Q = self.check_params(data, a0, P0, T, Z, R, H, Q)
 
         results, updates = pytensor.scan(
             self.kalman_step,
@@ -53,8 +58,8 @@ class BaseFilter(ABC):
 
         # This follows the Statsmodels output, which appends x0 and P0 to the predicted states, but not to the
         # filtered states
-        predicted_states = pt.concatenate([a0[None], predicted_states], axis=0)
-        predicted_covariances = pt.concatenate([P0[None], predicted_covariances], axis=0)
+        predicted_states = pt.concatenate([pt.atleast_3d(a0), predicted_states], axis=0)
+        predicted_covariances = pt.concatenate([pt.atleast_3d(P0), predicted_covariances], axis=0)
 
         filter_results = [
             filtered_states,
@@ -62,10 +67,10 @@ class BaseFilter(ABC):
             filtered_covariances,
             predicted_covariances,
             log_likelihoods.sum(),
-            log_likelihoods,
+            log_likelihoods.squeeze(),
         ]
 
-        return [x.squeeze() for x in filter_results]
+        return filter_results
 
     @staticmethod
     def predict(a, P, T, R, Q) -> Tuple[TensorVariable, TensorVariable]:
@@ -94,11 +99,10 @@ class BaseFilter(ABC):
         .. [1] Durbin, J., and S. J. Koopman. Time Series Analysis by State Space Methods.
                2nd ed, Oxford University Press, 2012.
         """
-        y = y.ravel()
         nan_mask = pt.isnan(y)
         all_nan_flag = pt.all(nan_mask).astype(pytensor.config.floatX)
 
-        W = pt.set_subtensor(pt.eye(y.shape[0])[nan_mask, nan_mask], 0.0)
+        W = pt.set_subtensor(pt.eye(y.shape[0])[nan_mask.ravel(), nan_mask.ravel()], 0.0)
 
         Z_masked = W.dot(Z)
         H_masked = W.dot(H)
@@ -121,7 +125,6 @@ class StandardFilter(BaseFilter):
         TODO: Verify these equations are correct if there are multiple endogenous variables.
         TODO: Is there a more elegant way to handle nans?
         """
-
         v = y - Z.dot(a)
 
         PZT = P.dot(Z.T)
@@ -178,7 +181,7 @@ class CholeskyFilter(BaseFilter):
         ll = pt.switch(
             all_nan_flag,
             0.0,
-            -0.5 * (n * MVN_CONST + (v.T @ inner_term).ravel()) - pt.log(pt.diag(F_chol)).sum(),
+            (-0.5 * (n * MVN_CONST + (v.T @ inner_term).ravel()) - pt.log(pt.diag(F_chol)).sum()).ravel()[0],
         )
 
         return a_filtered, P_filtered, ll
@@ -189,6 +192,10 @@ class SingleTimeseriesFilter(BaseFilter):
     If there is only a single observed timeseries, regardless of the number of hidden states, there is no need to
     perform a matrix inversion anywhere in the filter.
     """
+
+    def check_params(self, data, a0, P0, T, Z, R, H, Q):
+        data = assert_data_is_1d(data, pt.eq(data.shape[1], 1))
+        return data, a0, P0, T, Z, R, H, Q
 
     @staticmethod
     def update(a, P, y, Z, H, all_nan_flag):
@@ -205,7 +212,9 @@ class SingleTimeseriesFilter(BaseFilter):
         a_filtered = a + K * v
         P_filtered = P - P @ P / F
 
-        ll = pt.switch(all_nan_flag, 0.0, -0.5 * (MVN_CONST + pt.log(F) + v**2 / F))
+        ll = pt.switch(all_nan_flag,
+                       0.0,
+                       (-0.5 * (MVN_CONST + pt.log(F) + v**2 / F))).ravel()[0]
 
         return a_filtered, P_filtered, ll
 

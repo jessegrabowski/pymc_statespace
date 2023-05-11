@@ -1,7 +1,9 @@
 import unittest
 
+import numpy as np
 import pytensor
 import pytest
+from numpy.testing import assert_allclose
 
 from pymc_statespace.filters import (
     CholeskyFilter,
@@ -10,11 +12,10 @@ from pymc_statespace.filters import (
     UnivariateFilter,
 )
 from tests.utilities.test_helpers import (
-    filter_output_shapes_test_helper,
     initialize_filter,
     make_test_inputs,
     nile_test_test_helper,
-    no_missing_outputs_helper,
+    get_expected_shape
 )
 
 standard_inout = initialize_filter(StandardFilter())
@@ -35,50 +36,95 @@ filter_funcs_nd = [
     pytest.param(f_single_ts, marks=[pytest.mark.xfail]),
 ]
 filter_names = ["StandardFilter", "CholeskyFilter", "UnivariateFilter", "SingleTimeSeriesFilter"]
+output_names = ['filtered_states', 'predicted_states', 'smoothed_states', 'filtered_covs', 'predicted_covs',
+                'smoothed_covs', 'log_likelihood', 'll_obs']
 
 
 @pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
-def test_output_shapes_one_state_one_observed(filter_func):
+@pytest.mark.parametrize(('output_idx', 'name'), list(enumerate(output_names)), ids=output_names)
+def test_output_shapes_one_state_one_observed(filter_func, output_idx, name):
     p, m, r, n = 1, 1, 1, 10
-    data, *inputs = make_test_inputs(p, m, r, n)
+    inputs = make_test_inputs(p, m, r, n)
 
-    outputs = filter_func(data, *inputs)
-    filter_output_shapes_test_helper(outputs, data, p, m, r, n)
+    outputs = filter_func(*inputs)
+    expected_output = get_expected_shape(name, p, m, r, n)
+
+    assert outputs[output_idx].shape == expected_output
 
 
 @pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
-def test_output_shapes_when_all_states_are_stochastic(filter_func):
+@pytest.mark.parametrize(('output_idx', 'name'), list(enumerate(output_names)), ids=output_names)
+def test_output_shapes_when_all_states_are_stochastic(filter_func, output_idx, name):
     p, m, r, n = 1, 2, 2, 10
-    data, *inputs = make_test_inputs(p, m, r, n)
+    inputs = make_test_inputs(p, m, r, n)
 
-    outputs = filter_func(data, *inputs)
-    filter_output_shapes_test_helper(outputs, data, p, m, r, n)
+    outputs = filter_func(*inputs)
+    expected_output = get_expected_shape(name, p, m, r, n)
+
+    assert outputs[output_idx].shape == expected_output
 
 
 @pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
-def test_output_shapes_when_some_states_are_deterministic(filter_func):
+@pytest.mark.parametrize(('output_idx', 'name'), list(enumerate(output_names)), ids=output_names)
+def test_output_shapes_when_some_states_are_deterministic(filter_func, output_idx, name):
     p, m, r, n = 1, 5, 2, 10
-    data, *inputs = make_test_inputs(p, m, r, n)
+    inputs = make_test_inputs(p, m, r, n)
 
-    outputs = filter_func(data, *inputs)
-    filter_output_shapes_test_helper(outputs, data, p, m, r, n)
+    outputs = filter_func(*inputs)
+    expected_output = get_expected_shape(name, p, m, r, n)
 
-
-@pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
-def test_output_with_deterministic_observation_equation(filter_func):
-    p, m, r, n = 1, 5, 1, 10
-    data, *inputs = make_test_inputs(p, m, r, n)
-
-    outputs = filter_func(data, *inputs)
-    filter_output_shapes_test_helper(outputs, data, p, m, r, n)
+    assert outputs[output_idx].shape == expected_output
 
 
 @pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
-def test_missing_data(filter_func):
+@pytest.mark.parametrize(('output_idx', 'name'), list(enumerate(output_names)), ids=output_names)
+def test_output_with_deterministic_observation_equation(filter_func, output_idx, name):
     p, m, r, n = 1, 5, 1, 10
-    data, *inputs = make_test_inputs(p, m, r, n, missing_data=1)
-    outputs = filter_func(data, *inputs)
-    no_missing_outputs_helper(outputs)
+    inputs = make_test_inputs(p, m, r, n)
+
+    outputs = filter_func(*inputs)
+    expected_output = get_expected_shape(name, p, m, r, n)
+
+    assert outputs[output_idx].shape == expected_output
+
+
+@pytest.mark.parametrize(("filter_func", 'filter_name'), zip(filter_funcs, filter_names), ids=filter_names)
+@pytest.mark.parametrize(('output_idx', 'name'), list(enumerate(output_names)), ids=output_names)
+def test_output_with_multiple_observed(filter_func, filter_name, output_idx, name):
+    p, m, r, n = 5, 5, 1, 10
+    inputs = make_test_inputs(p, m, r, n)
+    expected_output = get_expected_shape(name, p, m, r, n)
+
+    if filter_name == 'SingleTimeSeriesFilter':
+        with pytest.raises(AssertionError, match='UnivariateTimeSeries filter requires data be at most 1-dimensional'):
+            filter_func(*inputs)
+
+    else:
+        outputs = filter_func(*inputs)
+        assert outputs[output_idx].shape == expected_output
+
+
+@pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
+@pytest.mark.parametrize(('output_idx', 'name'), list(enumerate(output_names)), ids=output_names)
+def test_missing_data(filter_func, output_idx, name):
+    p, m, r, n = 1, 5, 1, 10
+    inputs = make_test_inputs(p, m, r, n, missing_data=1)
+    outputs = filter_func(*inputs)
+
+    assert not np.any(np.isnan(outputs[output_idx]))
+
+
+@pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
+@pytest.mark.parametrize('output_idx', [(0, 2), (3, 5)], ids=['smoothed_states', 'smoothed_covs'])
+def test_last_smoother_is_last_filtered(filter_func, output_idx):
+    p, m, r, n = 1, 5, 1, 10
+    inputs = make_test_inputs(p, m, r, n)
+    outputs = filter_func(*inputs)
+
+    filtered = outputs[output_idx[0]]
+    smoothed = outputs[output_idx[1]]
+
+    assert_allclose(filtered[-1], smoothed[-1])
 
 
 @pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
@@ -90,65 +136,15 @@ def test_state_calculations(filter_func):
 def test_state_calculations_with_missing(filter_func):
     nile_test_test_helper(filter_func, test_ll=False, test_states=True, n_missing=5)
 
-    #
-    # def test_loglike_calculation(self):
-    #     data = self.nile.copy()
-    #     self.nile_test_test_helper(data)
-    #
-    # def test_loglike_calculation_with_missing(self):
-    #     data = self.nile.copy()
-    #     missing_idx = np.random.choice(data.shape[0], size=5, replace=False)
-    #     data.iloc[missing_idx] = np.nan
-    #
-    #     self.nile_test_test_helper(data, rtol=1e-2)
-    #
 
-    #
-    # def test_multiple_observed(self):
-    #     if not test_multiple_observed:
-    #         return
-    #
-    #     m, p, r, n = 4, 2, 4, 10
-    #
-    #     data = np.arange(n).repeat(2).reshape(-1, 2)
-    #     a0 = np.zeros((m, 1))
-    #     P0 = np.eye(m)
-    #
-    #     T = np.array(
-    #         [
-    #             [1.0, 1.0, 0.0, 0.0],
-    #             [0.0, 1.0, 0.0, 0.0],
-    #             [0.0, 0.0, 1.0, 1.0],
-    #             [0.0, 0.0, 0.0, 1.0],
-    #         ]
-    #     )
-    #
-    #     Z = np.array([[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]])
-    #     R = np.eye(4)
-    #     H = np.eye(2)
-    #     Q = np.eye(4)
-    #
-    #     (
-    #         filtered_states,
-    #         predicted_states,
-    #         smoothed_states,
-    #         filtered_covs,
-    #         predicted_covs,
-    #         smoothed_covs,
-    #         log_likelihood,
-    #         ll_obs,
-    #     ) = self.filter_func(data, a0, P0, T, Z, R, H, Q)
-    #
-    #     self.assertTrue(filtered_states.shape == (n, m, 1))
-    #     self.assertTrue(predicted_states.shape == (n + 1, m, 1))
-    #     self.assertTrue(smoothed_states.shape == (n, m, 1))
-    #
-    #     self.assertTrue(filtered_covs.shape == (n, m, m))
-    #     self.assertTrue(predicted_covs.shape == (n + 1, m, m))
-    #     self.assertTrue(smoothed_covs.shape == (n, m, m))
-    #
-    #     self.assertTrue(ll_obs.ravel().shape == data[:, 0].shape)
-    #     self.assertTrue(log_likelihood.shape == ())
+@pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
+def test_loglike_calculation(filter_func):
+    nile_test_test_helper(filter_func, test_states=False, test_ll=True)
+
+
+@pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
+def test_loglike_calculation_with_missing(filter_func):
+    nile_test_test_helper(filter_func, n_missing=5)
 
 
 if __name__ == "__main__":
