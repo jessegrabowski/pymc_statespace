@@ -1,5 +1,5 @@
 # PyMC StateSpace
-A system for Bayesian estimation of state space models using PyMC 4.0. This package is designed to mirror the functionality of the Statsmodels.api `tsa.statespace` module, except within a Bayesian estimation framework. To accomplish this, PyMC Statespace has a Kalman filter written in Pytensor, allowing the gradients of the iterative Kalman filter likelihood to be computed and provided to the PyMC NUTS sampler.
+A system for Bayesian estimation of state space models using PyMC 5.0. This package is designed to mirror the functionality of the Statsmodels.api `tsa.statespace` module, except within a Bayesian estimation framework. To accomplish this, PyMC Statespace has a Kalman filter written in Pytensor, allowing the gradients of the iterative Kalman filter likelihood to be computed and provided to the PyMC NUTS sampler.
 
 ## State Space Models
 This package follows Statsmodels in using the Durbin and Koopman (2012) nomenclature for a linear state space model. Under this nomenclature, the model is written as:
