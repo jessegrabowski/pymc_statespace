@@ -69,7 +69,8 @@ def make_test_inputs(p, m, r, n, missing_data=None, H_is_zero=False):
     P0 = np.eye(m)
     Q = np.eye(r)
     H = np.zeros((p, p)) if H_is_zero else np.eye(p)
-    T = np.eye(m)
+    T = np.eye(m, k=-1)
+    T[0, :] = 1/m
     R = np.eye(m)[:, :r]
     Z = np.eye(m)[:p, :]
 

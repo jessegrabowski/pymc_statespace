@@ -282,15 +282,14 @@ class SteadyStateFilter(BaseFilter):
                2nd ed, Oxford University Press, 2012.
         """
 
-        y = y[:, None]
-        nan_mask = pt.isnan(y).ravel()
+        nan_mask = pt.isnan(y)
         all_nan_flag = pt.all(nan_mask).astype(pytensor.config.floatX)
 
-        W = pt.set_subtensor(pt.eye(y.shape[0])[nan_mask, nan_mask], 0.0)
+        W = pt.set_subtensor(pt.eye(y.shape[0])[nan_mask.ravel(), nan_mask.ravel()], 0.0)
 
         Z_masked = W.dot(Z)
         H_masked = W.dot(H)
-        y_masked = pt.set_subtensor(y[nan_mask, :], 0.0)
+        y_masked = pt.set_subtensor(y[nan_mask], 0.0)
 
         a_filtered, P_filtered, ll = self.update(
             y=y_masked,

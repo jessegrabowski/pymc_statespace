@@ -10,6 +10,7 @@ from pymc_statespace.filters import (
     SingleTimeseriesFilter,
     StandardFilter,
     UnivariateFilter,
+    SteadyStateFilter
 )
 from tests.utilities.test_helpers import (
     initialize_filter,
@@ -22,22 +23,20 @@ standard_inout = initialize_filter(StandardFilter())
 cholesky_inout = initialize_filter(CholeskyFilter())
 univariate_inout = initialize_filter(UnivariateFilter())
 single_inout = initialize_filter(SingleTimeseriesFilter())
+steadystate_inout = initialize_filter(SteadyStateFilter())
 
 f_standard = pytensor.function(*standard_inout)
 f_cholesky = pytensor.function(*cholesky_inout)
 f_univariate = pytensor.function(*univariate_inout)
 f_single_ts = pytensor.function(*single_inout)
+f_steady = pytensor.function(*steadystate_inout)
 
-filter_funcs = [f_standard, f_cholesky, f_univariate, f_single_ts]
-filter_funcs_nd = [
-    f_standard,
-    f_cholesky,
-    f_univariate,
-    pytest.param(f_single_ts, marks=[pytest.mark.xfail]),
-]
-filter_names = ["StandardFilter", "CholeskyFilter", "UnivariateFilter", "SingleTimeSeriesFilter"]
-output_names = ['filtered_states', 'predicted_states', 'smoothed_states', 'filtered_covs', 'predicted_covs',
-                'smoothed_covs', 'log_likelihood', 'll_obs']
+filter_funcs = [f_standard, f_cholesky, f_univariate, f_single_ts, f_steady]
+
+filter_names = ["StandardFilter", "CholeskyFilter", "UnivariateFilter", "SingleTimeSeriesFilter", "SteadyStateFilter"]
+output_names = ['filtered_states', 'predicted_states', 'smoothed_states',
+                'filtered_covs', 'predicted_covs', 'smoothed_covs',
+                'log_likelihood', 'll_obs']
 
 
 @pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
