@@ -3,8 +3,7 @@ minversion = "6.0"
 xfail_strict=true
 filterwarnings = [
     "error",
-    "ignore::DeprecationWarning",
-    "ignore::numba.core.errors.NumbaDeprecationWarning"]
+    "ignore::DeprecationWarning"]
 
 env = ["NUMBA_DISABLE_JIT = 1"]
 

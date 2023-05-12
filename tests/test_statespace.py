@@ -65,7 +65,7 @@ def ss_mod():
             self.ssm["transition", 0, :] = theta
 
     T = np.zeros((2, 2)).astype("float64")
-    T[1, 0] = 1
+    T[1, 0] = 1.0
     Z = np.array([[1.0, 0.0]])
     R = np.array([[1.0], [0.0]])
     H = np.array([[0.1]])
@@ -159,18 +159,18 @@ def test_sample_unconditional_prior(ss_mod, pymc_mod):
         unconditional_prior = ss_mod.sample_unconditional_prior(n_simulations=1, prior_samples=100)
 
 
-# def test_sample_posterior(ss_mod, pymc_mod):
-#     from warnings import catch_warnings, simplefilter
-#     with catch_warnings():
-#         simplefilter('ignore')
-#         with pymc_mod:
-#             idata = pm.sample(draws=100, tune=0, chains=1)
-#             conditional_posterior = ss_mod.sample_conditional_posterior(idata, 'predicted',
-#                                                                         n_simulations=1,
-#                                                                         posterior_samples=10)
-#             unconditional_posterior = ss_mod.sample_unconditional_posterior(idata, n_steps=100,
-#                                                                             n_simulations=1,
-#                                                                             posterior_samples=10)
+def test_sample_posterior(ss_mod, pymc_mod):
+    # from warnings import catch_warnings, simplefilter
+    # with catch_warnings():
+    #     simplefilter('ignore')
+    with pymc_mod:
+        idata = pm.sample(draws=100, tune=0, chains=1)
+        conditional_posterior = ss_mod.sample_conditional_posterior(idata, 'predicted',
+                                                                    n_simulations=1,
+                                                                    posterior_samples=10)
+        unconditional_posterior = ss_mod.sample_unconditional_posterior(idata, n_steps=100,
+                                                                        n_simulations=1,
+                                                                        posterior_samples=10)
 
 
 if __name__ == "__main__":
