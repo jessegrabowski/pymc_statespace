@@ -31,6 +31,28 @@ FILTER_FACTORY = {
 }
 
 
+def get_posterior_samples(posterior_samples, posterior_size):
+    if isinstance(posterior_samples, float):
+        if posterior_samples > 1.0 or posterior_samples < 0.0:
+            raise ValueError(
+                "If posterior_samples is a float, it should be between 0 and 1, representing the "
+                "fraction of total posterior samples to re-sample."
+            )
+        posterior_samples = int(np.floor(posterior_samples * posterior_size))
+
+    elif posterior_samples is None:
+        posterior_samples = posterior_size
+
+    return posterior_samples
+
+
+def validate_filter_arg(filter_arg):
+    if filter_arg.lower() not in ["filtered", "predicted", "smoothed"]:
+        raise ValueError(
+            f"filter_output should be one of filtered, predicted, or smoothed, recieved {filter_arg}"
+        )
+
+
 class PyMCStateSpace:
     def __init__(self, data, k_states, k_posdef, filter_type="standard"):
         self.data = data
@@ -207,11 +229,7 @@ class PyMCStateSpace:
             A numpy array of shape (n_simulations x prior_samples, n_timesteps, n_states) with simulated trajectories.
 
         """
-        if filter_output.lower() not in ["filtered", "predicted", "smoothed"]:
-            raise ValueError(
-                f"filter_output should be one of filtered, predicted, or smoothed, recieved {filter_output}"
-            )
-
+        validate_filter_arg(filter_output)
         pymc_model = modelcontext(None)
         with pymc_model:
             with catch_warnings():
@@ -268,23 +286,10 @@ class PyMCStateSpace:
             A numpy array of shape (n_simulations x prior_samples, n_timesteps, n_states) with simulated trajectories.
 
         """
-        if filter_output.lower() not in ["filtered", "predicted", "smoothed"]:
-            raise ValueError(
-                f"filter_output should be one of filtered, predicted, or smoothed, recieved {filter_output}"
-            )
-
+        validate_filter_arg(filter_output)
         chains, draws, n, k, *_ = trace.posterior[f"{filter_output}_states"].shape
         posterior_size = chains * draws
-        if isinstance(posterior_samples, float):
-            if posterior_samples > 1.0 or posterior_samples < 0.0:
-                raise ValueError(
-                    "If posterior_samples is a float, it should be between 0 and 1, representing the "
-                    "fraction of total posterior samples to re-sample."
-                )
-            posterior_samples = int(np.floor(posterior_samples * posterior_size))
-
-        elif posterior_samples is None:
-            posterior_samples = posterior_size
+        posterior_samples = get_posterior_samples(posterior_samples, posterior_size)
 
         resample_idxs = np.random.randint(0, posterior_size, size=posterior_samples)
 
@@ -399,16 +404,7 @@ class PyMCStateSpace:
         draws = trace.posterior.dims["draw"]
 
         posterior_size = chains * draws
-        if isinstance(posterior_samples, float):
-            if posterior_samples > 1.0 or posterior_samples < 0.0:
-                raise ValueError(
-                    "If posterior_samples is a float, it should be between 0 and 1, representing the "
-                    "fraction of total posterior samples to re-sample."
-                )
-            posterior_samples = int(np.floor(posterior_samples * posterior_size))
-
-        elif posterior_samples is None:
-            posterior_samples = posterior_size
+        posterior_samples = get_posterior_samples(posterior_samples, posterior_size)
 
         resample_idxs = np.random.randint(0, posterior_size, size=posterior_samples)
 

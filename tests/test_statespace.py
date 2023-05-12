@@ -90,6 +90,13 @@ def pymc_mod(ss_mod):
 
     return pymc_mod
 
+@pytest.fixture
+def idata(pymc_mod):
+    with pymc_mod:
+        idata = pm.sample(draws=100, tune=0, chains=1)
+
+    return idata
+
 
 def test_gather_pymc_variables(ss_mod):
     with pm.Model() as mod:
@@ -154,20 +161,44 @@ def test_sample_conditional_prior(ss_mod, pymc_mod, filter_output):
             )
 
 
+@pytest.mark.parametrize(
+    "filter_output",
+    ["filtered", "predicted", "smoothed", "invalid"],
+    ids=["filtered", "predicted", "smoothed", "invalid"],
+)
+def test_sample_conditional_posterior(ss_mod, pymc_mod, idata, filter_output):
+    if filter_output == "invalid":
+        msg = "filter_output should be one of filtered, predicted, or smoothed, recieved invalid"
+        with pytest.raises(ValueError, match=msg), pymc_mod:
+            ss_mod.sample_conditional_prior(filter_output=filter_output)
+    else:
+        with pymc_mod:
+            conditional_prior = ss_mod.sample_conditional_posterior(idata,
+                filter_output=filter_output, n_simulations=1, posterior_samples=0.5
+            )
+
+def test_sample_conditional_posterior_raises_on_invalid_samples(ss_mod, pymc_mod, idata):
+    msg = "If posterior_samples is a float, it should be between 0 and 1, representing the "\
+          "fraction of total posterior samples to re-sample."
+
+    with pymc_mod:
+        with pytest.raises(ValueError, match=msg):
+            conditional_prior = ss_mod.sample_conditional_posterior(idata,
+                filter_output="predicted", n_simulations=1, posterior_samples=-0.3
+            )
+
+
+def test_sample_conditional_posterior_default_samples(ss_mod, pymc_mod, idata):
+    with pymc_mod:
+        conditional_prior = ss_mod.sample_conditional_posterior(idata, filter_output="predicted", n_simulations=1)
+
+
 def test_sample_unconditional_prior(ss_mod, pymc_mod):
     with pymc_mod:
         unconditional_prior = ss_mod.sample_unconditional_prior(n_simulations=1, prior_samples=100)
 
-
-def test_sample_posterior(ss_mod, pymc_mod):
-    # from warnings import catch_warnings, simplefilter
-    # with catch_warnings():
-    #     simplefilter('ignore')
+def test_sample_unconditional_posterior(ss_mod, pymc_mod, idata):
     with pymc_mod:
-        idata = pm.sample(draws=100, tune=0, chains=1)
-        conditional_posterior = ss_mod.sample_conditional_posterior(idata, 'predicted',
-                                                                    n_simulations=1,
-                                                                    posterior_samples=10)
         unconditional_posterior = ss_mod.sample_unconditional_posterior(idata, n_steps=100,
                                                                         n_simulations=1,
                                                                         posterior_samples=10)
