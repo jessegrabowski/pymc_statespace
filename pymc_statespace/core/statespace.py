@@ -77,7 +77,7 @@ class PyMCStateSpace:
 
     @property
     def param_names(self) -> List[str]:
-        return NotImplementedError
+        raise NotImplementedError
 
     def update(self, theta: at.TensorVariable) -> None:
         """
@@ -122,7 +122,7 @@ class PyMCStateSpace:
         missing_params = set(self.param_names) - set(found_params)
         if len(missing_params) > 0:
             raise ValueError(
-                "The following required model parameters were not found in the PyMC model:"
+                "The following required model parameters were not found in the PyMC model: "
                 + ", ".join(param for param in list(missing_params))
             )
         return at.concatenate(theta)
@@ -138,11 +138,6 @@ class PyMCStateSpace:
             theta = self.gather_required_random_variables()
             self.update(theta)
 
-            # filtered_states, predicted_states, smoothed_states, \
-            # filtered_covariances, predicted_covariances, smoothed_covariances, \
-            # log_likelihood, ll_obs = self.kalman_filter.build_graph(at.as_tensor_variable(self.data),
-            #                                                         *self.unpack_statespace())
-
             (
                 filtered_states,
                 predicted_states,
@@ -156,16 +151,34 @@ class PyMCStateSpace:
 
             pm.Deterministic("filtered_states", filtered_states)
             pm.Deterministic("predicted_states", predicted_states)
-            # pm.Deterministic('smoothed_states', smoothed_states)
 
             pm.Deterministic("predicted_covariances", predicted_covariances)
             pm.Deterministic("filtered_covariances", filtered_covariances)
-            # pm.Deterministic('smoothed_covariances', smoothed_covariances)
 
             pm.Potential("log_likelihood", log_likelihood)
 
-            # return self.kalman_filter.build_graph(at.as_tensor_variable(self.data),
-            #                                       *self.unpack_statespace())
+    def build_smoother_graph(self):
+        pymc_model = modelcontext(None)
+        with pymc_model:
+            *_, T, Z, R, H, Q = self.unpack_statespace()
+            det_names = [x.name for x in pymc_model.deterministics]
+            if "filtered_states" not in det_names or "filtered_covariances" not in det_names:
+                raise ValueError(
+                    "Couldn't find Kalman filtered time series among model deterministics. Have you run"
+                    ".build_statespace_graph() ?"
+                )
+            fs_idx = det_names.index("filtered_states")
+            fc_idx = det_names.index("filtered_covariances")
+
+            filtered_states = pymc_model.deterministics[fs_idx]
+            filtered_covariances = pymc_model.deterministics[fc_idx]
+
+            smooth_states, smooth_covariances = self.kalman_smoother.build_graph(
+                T, R, Q, filtered_states, filtered_covariances
+            )
+
+            pm.Deterministic("smoothed_states", smooth_states)
+            pm.Deterministic("smoothed_covariances", smooth_covariances)
 
     @staticmethod
     def sample_conditional_prior(

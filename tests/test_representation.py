@@ -86,16 +86,23 @@ class BasicFunctionality(unittest.TestCase):
     def test_invalid_key_name_raises(self):
         ssm = PytensorRepresentation(data=self.data, k_states=5, k_posdef=1)
         with self.assertRaises(IndexError) as e:
-            X = ssm["invald_key"]
-            msg = str(e.exception)
-            self.assertEqual(msg, "invalid_key is an invalid state space matrix name")
+            X = ssm["invalid_key"]
+        msg = str(e.exception)
+        self.assertEqual(msg, "invalid_key is an invalid state space matrix name")
+
+    def test_non_string_key_raises(self):
+        ssm = PytensorRepresentation(data=self.data, k_states=5, k_posdef=1)
+        with self.assertRaises(IndexError) as e:
+            X = ssm[0]
+        msg = str(e.exception)
+        self.assertEqual(msg, "First index must the name of a valid state space matrix.")
 
     def test_invalid_key_tuple_raises(self):
         ssm = PytensorRepresentation(data=self.data, k_states=5, k_posdef=1)
         with self.assertRaises(IndexError) as e:
             X = ssm[0, 1, 1]
-            msg = str(e.exception)
-            self.assertEqual(msg, "First index must the name of a valid state space matrix.")
+        msg = str(e.exception)
+        self.assertEqual(msg, "First index must the name of a valid state space matrix.")
 
     def test_slice_statespace_matrix(self):
         T = np.eye(5)
@@ -109,6 +116,14 @@ class BasicFunctionality(unittest.TestCase):
         ssm["transition"] = T
 
         assert_allclose(T, ssm["transition"].eval())
+
+    def test_update_matrix_with_invalid_shape_raises(self):
+        T = np.eye(10)
+        ssm = PytensorRepresentation(data=self.data, k_states=5, k_posdef=1)
+        with self.assertRaises(ValueError) as e:
+            ssm["transition"] = T
+        msg = str(e.exception)
+        self.assertEqual(msg, "Array provided for transition has shape (10, 10), expected (5, 5)")
 
 
 if __name__ == "__main__":

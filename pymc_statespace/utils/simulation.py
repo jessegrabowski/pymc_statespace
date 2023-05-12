@@ -1,11 +1,10 @@
 import numpy as np
+from numba import njit
 
-# from numba import njit
-
-# from pymc_statespace.utils.numba_linalg import numba_block_diagonal
+from pymc_statespace.utils.numba_linalg import numba_block_diagonal
 
 
-# @njit
+@njit
 def numba_mvn_draws(mu, cov):
     samples = np.random.randn(*mu.shape)
     k = cov.shape[0]
@@ -15,7 +14,7 @@ def numba_mvn_draws(mu, cov):
     return mu + L @ samples
 
 
-# @njit
+@njit
 def conditional_simulation(mus, covs, n, k, n_simulations=100):
     simulations = np.empty((n * n_simulations, n, k))
 
@@ -26,7 +25,7 @@ def conditional_simulation(mus, covs, n, k, n_simulations=100):
     return simulations
 
 
-# @njit
+@njit
 def simulate_statespace(T, Z, R, H, Q, n_steps):
     n_obs, n_states = Z.shape
     k_posdef = R.shape[1]
