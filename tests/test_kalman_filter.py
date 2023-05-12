@@ -12,6 +12,7 @@ from pymc_statespace.filters import (
     SteadyStateFilter,
     UnivariateFilter,
 )
+from pymc_statespace.filters.kalman_filter import BaseFilter
 from tests.utilities.test_helpers import (
     get_expected_shape,
     get_sm_state_from_output_name,
@@ -51,6 +52,13 @@ output_names = [
     "log_likelihood",
     "ll_obs",
 ]
+
+
+def test_base_class_update_raises():
+    filter = BaseFilter()
+    inputs = [None] * 6
+    with pytest.raises(NotImplementedError):
+        filter.update(*inputs)
 
 
 @pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)

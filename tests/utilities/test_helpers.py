@@ -4,7 +4,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytensor.tensor as pt
-from numpy.testing import assert_allclose
 
 from pymc_statespace.filters.kalman_smoother import KalmanSmoother
 from tests.utilities.statsmodel_local_level import LocalLinearTrend
@@ -74,9 +73,7 @@ def make_test_inputs(p, m, r, n, missing_data=None, H_is_zero=False):
     R = np.eye(m)[:, :r]
     Z = np.eye(m)[:p, :]
 
-    inputs = [data, a0, P0, T, Z, R, H, Q]
-
-    return inputs
+    return data, a0, P0, T, Z, R, H, Q
 
 
 def get_expected_shape(name, p, m, r, n):
