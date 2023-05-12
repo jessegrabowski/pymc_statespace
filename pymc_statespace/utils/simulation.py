@@ -17,8 +17,9 @@ def numba_mvn_draws(mu, cov):
 @njit
 def conditional_simulation(mus, covs, n, k, n_simulations=100):
     simulations = np.empty((n * n_simulations, n, k))
+    n_samples = mus.shape[0]
 
-    for i in range(n):
+    for i in range(n_samples):
         for j in range(n_simulations):
             sim = numba_mvn_draws(mus[i], numba_block_diagonal(covs[i]))
             simulations[(i * n_simulations + j), :, :] = sim.reshape(n, k)
@@ -26,7 +27,7 @@ def conditional_simulation(mus, covs, n, k, n_simulations=100):
 
 
 @njit
-def simulate_statespace(T, Z, R, H, Q, n_steps):
+def simulate_statespace(T, Z, R, H, Q, n_steps, x0=None):
     n_obs, n_states = Z.shape
     k_posdef = R.shape[1]
     k_obs_noise = H.shape[0] * (1 - int(np.all(H == 0)))
@@ -42,6 +43,10 @@ def simulate_statespace(T, Z, R, H, Q, n_steps):
 
     simulated_states = np.zeros((n_steps, n_states))
     simulated_obs = np.zeros((n_steps, n_obs))
+
+    if x0 is not None:
+        simulated_states[0] = x0
+        simulated_obs[0] = Z @ x0
 
     if k_obs_noise != 0:
         for t in range(1, n_steps):

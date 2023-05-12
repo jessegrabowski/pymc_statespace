@@ -224,7 +224,8 @@ class PyMCStateSpace:
                     ],
                 )
 
-        _, _, n, k, *_ = cond_prior.prior[f"{filter_output}_states"].shape
+        _, n, k, *_ = cond_prior.prior[f"{filter_output}_states"].values.squeeze().shape
+
         mus = cond_prior.prior[f"{filter_output}_states"].values.squeeze().reshape(-1, n * k)
         covs = (
             cond_prior.prior[f"{filter_output}_covariances"].values.squeeze().reshape(-1, n, k, k)
