@@ -70,7 +70,7 @@ def make_test_inputs(p, m, r, n, missing_data=None, H_is_zero=False):
     Q = np.eye(r)
     H = np.zeros((p, p)) if H_is_zero else np.eye(p)
     T = np.eye(m, k=-1)
-    T[0, :] = 1/m
+    T[0, :] = 1 / m
     R = np.eye(m)[:, :r]
     Z = np.eye(m)[:p, :]
 
@@ -80,22 +80,37 @@ def make_test_inputs(p, m, r, n, missing_data=None, H_is_zero=False):
 
 
 def get_expected_shape(name, p, m, r, n):
-    if name == 'log_likelihood':
+    if name == "log_likelihood":
         return ()
-    elif name == 'll_obs':
-        return n,
-    filter_type, variable = name.split('_')
-    if filter_type == 'predicted':
+    elif name == "ll_obs":
+        return (n,)
+    filter_type, variable = name.split("_")
+    if filter_type == "predicted":
         n += 1
-    if variable == 'states':
+    if variable == "states":
         return n, m, 1
-    if variable == 'covs':
+    if variable == "covs":
         return n, m, m
 
 
-def nile_test_test_helper(
-        filter_func, test_ll=True, test_states=False, n_missing=0, **allclose_kwargs
-):
+def get_sm_state_from_output_name(res, name):
+    if name == "log_likelihood":
+        return res.llf
+    elif name == "ll_obs":
+        return res.llf_obs
+
+    filter_type, variable = name.split("_")
+    sm_states = getattr(res, "states")
+
+    if variable == "states":
+        return getattr(sm_states, filter_type)
+    if variable == "covs":
+        m = res.filter_results.k_states
+        # remove the "s" from "covs"
+        return getattr(sm_states, name[:-1]).reshape(-1, m, m)
+
+
+def nile_test_test_helper(n_missing=0):
     a0 = np.zeros((2, 1))
     P0 = np.eye(2) * 1e6
     Q = np.eye(2) * np.array([0.5, 0.01])
@@ -115,17 +130,6 @@ def nile_test_test_helper(
         initial_state=a0.ravel(),
     )
 
-    (
-        filtered_states,
-        predicted_states,
-        smoothed_states,
-        filtered_covs,
-        predicted_covs,
-        smoothed_covs,
-        log_likelihood,
-        ll_obs
-    ) = filter_func(data[..., None], a0, P0, T, Z, R, H, Q)
-
     res = sm_model.fit_constrained(
         constraints={
             "sigma2.measurement": 0.8,
@@ -134,14 +138,6 @@ def nile_test_test_helper(
         }
     )
 
-    if test_ll:
-        assert_allclose(ll_obs.ravel(), res.llf_obs, **allclose_kwargs)
+    inputs = [data[..., None], a0, P0, T, Z, R, H, Q]
 
-    elif test_states:
-        assert_allclose(filtered_states.squeeze(-1), res.states.filtered)
-        assert_allclose(predicted_states.squeeze(-1), res.states.predicted)
-        assert_allclose(smoothed_states.squeeze(-1), res.states.smoothed)
-
-        assert_allclose(filtered_covs, res.states.filtered_cov.reshape(-1, 2, 2))
-        assert_allclose(predicted_covs, res.states.predicted_cov.reshape(-1, 2, 2))
-        assert_allclose(smoothed_covs, res.states.smoothed_cov.reshape(-1, 2, 2), atol=1e-2)
+    return res, inputs

@@ -1,14 +1,14 @@
 from abc import ABC
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 import numpy as np
 import pytensor
 import pytensor.tensor as pt
+from pytensor.compile.mode import get_mode
 from pytensor.raise_op import Assert
 from pytensor.tensor import TensorVariable
 from pytensor.tensor.nlinalg import matrix_dot
 from pytensor.tensor.slinalg import SolveTriangular
-from pytensor.compile.mode import get_mode
 
 from pymc_statespace.utils.pytensor_scipy import solve_discrete_are
 
@@ -43,7 +43,7 @@ class BaseFilter(ABC):
             outputs_info=[None, a0, None, P0, None],
             non_sequences=[T, Z, R, H, Q],
             name="forward_kalman_pass",
-            mode=get_mode(mode)
+            mode=get_mode(mode),
         )
 
         filter_results = self._postprocess_scan_results(results, a0, P0)
@@ -107,12 +107,12 @@ class BaseFilter(ABC):
 
     @staticmethod
     def update(
-            a, P, y, Z, H, all_nan_flag
+        a, P, y, Z, H, all_nan_flag
     ) -> Tuple[TensorVariable, TensorVariable, TensorVariable]:
         raise NotImplementedError
 
     def kalman_step(
-            self, y, a, P, T, Z, R, H, Q
+        self, y, a, P, T, Z, R, H, Q
     ) -> Tuple[TensorVariable, TensorVariable, TensorVariable, TensorVariable, TensorVariable]:
         """
         The timing convention follows [1]. a0 and P0 are taken to be predicted states, so we begin
@@ -180,7 +180,7 @@ class CholeskyFilter(BaseFilter):
 
         # If everything is missing, K = 0, IKZ = I
         K = solve_lower_triangular(F_chol.T, solve_lower_triangular(F_chol, PZT.T)).T * (
-                1 - all_nan_flag
+            1 - all_nan_flag
         )
         I_KZ = pt.eye(K.shape[0]) - K.dot(Z)
 
@@ -193,7 +193,9 @@ class CholeskyFilter(BaseFilter):
         ll = pt.switch(
             all_nan_flag,
             0.0,
-            (-0.5 * (n * MVN_CONST + (v.T @ inner_term).ravel()) - pt.log(pt.diag(F_chol)).sum()).ravel()[0],
+            (
+                -0.5 * (n * MVN_CONST + (v.T @ inner_term).ravel()) - pt.log(pt.diag(F_chol)).sum()
+            ).ravel()[0],
         )
 
         return a_filtered, P_filtered, ll
@@ -221,12 +223,12 @@ class SingleTimeseriesFilter(BaseFilter):
         F = (Z.dot(PZT) + H).ravel() + all_nan_flag
         K = PZT / F
 
-        a_filtered = a + (K * v)
-        P_filtered = P - (P @ P / F)
+        I_KZ = pt.eye(K.shape[0]) - K.dot(Z)
 
-        ll = pt.switch(all_nan_flag,
-                       0.0,
-                       -0.5 * (MVN_CONST + pt.log(F) + v ** 2 / F)).ravel()[0]
+        a_filtered = a + (K * v)
+        P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)
+
+        ll = pt.switch(all_nan_flag, 0.0, -0.5 * (MVN_CONST + pt.log(F) + v**2 / F)).ravel()[0]
 
         return a_filtered, P_filtered, ll
 
@@ -249,14 +251,16 @@ class SteadyStateFilter(BaseFilter):
         P_steady = solve_discrete_are(T.T, Z.T, matrix_dot(R, Q, R.T), H)
         F = matrix_dot(Z, P_steady, Z.T) + H
         F_inv = pt.linalg.solve(F, pt.eye(F.shape[0]), assume_a="pos")
+        printop1 = pytensor.printing.Print("F_inv")
+        F_inv = printop1(F_inv)
 
         results, updates = pytensor.scan(
             self.kalman_step,
             sequences=[data],
-            outputs_info=[None, a0, None, P0, None],
+            outputs_info=[None, a0, None, P_steady, None],
             non_sequences=[F_inv, T, Z, R, H, Q],
             name="forward_kalman_pass",
-            mode=get_mode(mode)
+            mode=get_mode(mode),
         )
 
         return self._postprocess_scan_results(results, a0, P0)
@@ -264,14 +268,20 @@ class SteadyStateFilter(BaseFilter):
     @staticmethod
     def update(a, P, F_inv, y, Z, H, all_nan_flag):
         v = y - Z.dot(a)
-        PZT = P.dot(Z.T)
-        F = Z.dot(PZT) + H
 
-        K = PZT @ F_inv
+        PZT = P.dot(Z.T)
+        printop2 = pytensor.printing.Print("PZT")
+        PZT = printop2(PZT)
+
+        F = Z.dot(PZT) + H
+        K = PZT.dot(F_inv)
+        printop3 = pytensor.printing.Print("K")
+        K = printop3(K)
+
         I_KZ = pt.eye(K.shape[0]) - K.dot(Z)
 
         a_filtered = a + K.dot(v)
-        P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)  # Joseph form
+        P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)
 
         inner_term = matrix_dot(v.T, F_inv, v)
         ll = pt.switch(
@@ -337,7 +347,7 @@ class UnivariateFilter(BaseFilter):
         K = PZT / F * (1 - F_zero_flag)
         a_filtered = a + K * v * (1 - F_zero_flag)
         P_filtered = P - pt.outer(K, K) * F * (1 - F_zero_flag)
-        ll_inner = (pt.log(F) + v ** 2 / F) * (1 - F_zero_flag)
+        ll_inner = (pt.log(F) + v**2 / F) * (1 - F_zero_flag)
 
         return a_filtered, P_filtered, ll_inner
 
@@ -354,7 +364,7 @@ class UnivariateFilter(BaseFilter):
             self._univariate_inner_filter_step,
             sequences=[y_masked, Z_masked, pt.diag(H_masked), nan_mask],
             outputs_info=[a, P, None],
-            mode=get_mode(self.mode)
+            mode=get_mode(self.mode),
         )
 
         a_filtered, P_filtered, ll_inner = result
