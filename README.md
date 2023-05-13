@@ -90,7 +90,7 @@ def param_names(self):
     return ['x0', 'P0', 'sigma_obs', 'sigma_state']
 ```
 
-`self.ssm` is an `AesaraRepresentation` class object that is created by the super constructor. Every model has a `self.ssm` and a `self.kalman_filter` created after the super constructor is called. All the matrices stored in `self.ssm` are Aesara tensor variables, but numpy arrays can be passed to them for convenience. Behind the scenes, they will be converted to Aesara tensors.
+`self.ssm` is an `PytensorRepresentation` class object that is created by the super constructor. Every model has a `self.ssm` and a `self.kalman_filter` created after the super constructor is called. All the matrices stored in `self.ssm` are Pytensor tensor variables, but numpy arrays can be passed to them for convenience. Behind the scenes, they will be converted to Pytensor tensors.
 
 Note that the names of the matrices correspond to the names listed above. They are (in the same order):
 
@@ -106,7 +106,7 @@ Note that the names of the matrices correspond to the names listed above. They a
 
 Indexing by name only will expose the entire matrix. A name can also be followed by the usual numpy slice notation to get a specific element, row, or column.
 
-The user also needs to implement an `update` method, which takes in a single Aesara tensor as an argument. This method routes the parameters estimated by PyMC into the right spots in the state space matrices. The local level has at least two parameters to estimate: the variance of the level state innovations, and the variance of the trend state innovations. Here is the corresponding update method:
+The user also needs to implement an `update` method, which takes in a single Pytensor tensor as an argument. This method routes the parameters estimated by PyMC into the right spots in the state space matrices. The local level has at least two parameters to estimate: the variance of the level state innovations, and the variance of the trend state innovations. Here is the corresponding update method:
 
 ```python
 def update(self, theta: at.TensorVariable) -> None:
