@@ -20,9 +20,9 @@ coverage:
         base: auto
 
 ignore:
-  - "gEconpy/tests/*"
-  - "gEconpy/examples/*"
-  - "gEconpy/GCN FIles/*"
+  - "pymc_statespace/tests/*"
+  - "pymc_statespace/examples/*"
+  - "pymc_statespace/data/*"
 
 comment:
   layout: "reach, diff, flags, files"

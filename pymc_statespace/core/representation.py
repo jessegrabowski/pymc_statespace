@@ -1,19 +1,19 @@
 from typing import List, Optional, Tuple, Type, Union
 
 import numpy as np
-import pytensor.tensor as at
+import pytensor.tensor as pt
 from numpy.typing import ArrayLike
 
 KeyLike = Union[Tuple[Union[str, int]], str]
 
 
 class PytensorRepresentation:
-    data = at.matrix(name="Data")
-    design = at.tensor3(name="design")
-    obs_cov = at.tensor3(name="obs_cov")
-    transition = at.tensor3(name="transition")
-    selection = at.tensor3(name="selection")
-    state_cov = at.tensor3(name="state_cov")
+    data = pt.tensor3(name="Data")
+    design = pt.tensor3(name="design")
+    obs_cov = pt.tensor3(name="obs_cov")
+    transition = pt.tensor3(name="transition")
+    selection = pt.tensor3(name="selection")
+    state_cov = pt.tensor3(name="state_cov")
 
     def __init__(
         self,
@@ -80,11 +80,11 @@ class PytensorRepresentation:
         self.k_states = k_states
         self.k_posdef = k_posdef if k_posdef is not None else k_states
 
-        self.n_obs, self.k_endog = data.shape
+        self.n_obs, self.k_endog, *_ = data.shape
 
         # The last dimension is for time varying matrices; it could be n_obs. Not thinking about that now.
         self.shapes = {
-            "data": (self.k_endog, self.n_obs),
+            "data": (self.k_endog, self.n_obs, 1),
             "design": (self.k_endog, self.k_states, 1),
             "obs_intercept": (self.k_endog, 1),
             "obs_cov": (self.k_endog, self.k_endog, 1),
@@ -102,11 +102,10 @@ class PytensorRepresentation:
         for name, shape in self.shapes.items():
             if name == "data":
                 continue
-            setattr(self, name, at.zeros(shape))
-            #             setattr(self, name, np.zeros(shape))
+            setattr(self, name, pt.zeros(shape))
 
             if scope[name] is not None:
-                matrix = self._numpy_to_aesara(name, scope[name])
+                matrix = self._numpy_to_pytensor(name, scope[name])
                 setattr(self, name, matrix)
 
     def _validate_key(self, key: KeyLike) -> None:
@@ -137,15 +136,15 @@ class PytensorRepresentation:
                 f"Array provided for {name} has shape {X.shape}, expected {expected_shape}"
             )
 
-    def _numpy_to_aesara(self, name: str, X: ArrayLike) -> at.TensorVariable:
+    def _numpy_to_pytensor(self, name: str, X: ArrayLike) -> pt.TensorVariable:
+        X = X.copy()
         self._validate_matrix_shape(name, X)
         # Add a time dimension if one isn't provided
         if X.ndim == 2:
-            X = X[:, :, None]
+            X = X[..., None]
+        return pt.as_tensor(X, name=name)
 
-        return at.as_tensor(X, name=name)
-
-    def __getitem__(self, key: KeyLike) -> at.TensorVariable:
+    def __getitem__(self, key: KeyLike) -> pt.TensorVariable:
         _type = self._validate_key_and_get_type(key)
 
         # Case 1: user asked for an entire matrix by name
@@ -153,11 +152,13 @@ class PytensorRepresentation:
             self._validate_key(key)
             matrix = getattr(self, key)
 
+            # Slice away the time dimension if it's a dummy
             if self.shapes[key][-1] == 1:
                 return matrix[(slice(None),) * (matrix.ndim - 1) + (0,)]
 
-            else:
-                return matrix
+            # TODO: This might be needed in the future when time-varying matrices are supported
+            # else:
+            #     return matrix
 
         # Case 2: user asked for a particular matrix and some slices of it
         elif _type is tuple:
@@ -179,9 +180,10 @@ class PytensorRepresentation:
         if _type is str:
             self._validate_key(key)
             if isinstance(value, np.ndarray):
-                value = self._numpy_to_aesara(key, value)
+                value = self._numpy_to_pytensor(key, value)
             setattr(self, key, value)
 
+        # Case 2: key is a string plus a slice: we are setting a subset of a matrix
         elif _type is tuple:
             name, *slice_ = key
             self._validate_key(name)
@@ -190,6 +192,5 @@ class PytensorRepresentation:
 
             slice_ = self._add_time_dim_to_slice(name, slice_, matrix.ndim)
 
-            matrix = at.set_subtensor(matrix[slice_], value)
-            #             matrix[slice_] = value
+            matrix = pt.set_subtensor(matrix[slice_], value)
             setattr(self, name, matrix)
