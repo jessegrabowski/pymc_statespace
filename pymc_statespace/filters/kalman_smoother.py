@@ -1,10 +1,17 @@
+from typing import Optional
+
 import pytensor
 import pytensor.tensor as pt
+from pytensor.compile import get_mode
 from pytensor.tensor.nlinalg import matrix_dot
 
 
 class KalmanSmoother:
-    def build_graph(self, T, R, Q, filtered_states, filtered_covariances):
+    mode: Optional[str] = None
+
+    def build_graph(self, T, R, Q, filtered_states, filtered_covariances, mode=None):
+        self.mode = mode
+
         a_last = filtered_states[-1]
         P_last = filtered_covariances[-1]
 
@@ -15,6 +22,7 @@ class KalmanSmoother:
             non_sequences=[T, R, Q],
             go_backwards=True,
             name="kalman_smoother",
+            mode=get_mode(self.mode)
         )
 
         smoothed_states, smoothed_covariances = smoother_result

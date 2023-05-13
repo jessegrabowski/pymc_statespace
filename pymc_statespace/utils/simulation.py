@@ -16,8 +16,8 @@ def numba_mvn_draws(mu, cov):
 
 @njit
 def conditional_simulation(mus, covs, n, k, n_simulations=100):
-    simulations = np.empty((n * n_simulations, n, k))
     n_samples = mus.shape[0]
+    simulations = np.empty((n_samples * n_simulations, n, k))
 
     for i in range(n_samples):
         for j in range(n_simulations):

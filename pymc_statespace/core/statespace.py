@@ -149,7 +149,7 @@ class PyMCStateSpace:
             )
         return at.concatenate(theta)
 
-    def build_statespace_graph(self) -> None:
+    def build_statespace_graph(self, mode=None) -> None:
         """
         Given parameter vector theta, constructs the full computational graph describing the state space model.
         Must be called inside a PyMC model context.
@@ -168,7 +168,7 @@ class PyMCStateSpace:
                 log_likelihood,
                 ll_obs,
             ) = self.kalman_filter.build_graph(
-                at.as_tensor_variable(self.data), *self.unpack_statespace()
+                at.as_tensor_variable(self.data), *self.unpack_statespace(), mode=mode
             )
 
             pm.Deterministic("filtered_states", filtered_states)
@@ -179,7 +179,7 @@ class PyMCStateSpace:
 
             pm.Potential("log_likelihood", log_likelihood)
 
-    def build_smoother_graph(self):
+    def build_smoother_graph(self, mode=None):
         pymc_model = modelcontext(None)
         with pymc_model:
             *_, T, Z, R, H, Q = self.unpack_statespace()
@@ -196,7 +196,7 @@ class PyMCStateSpace:
             filtered_covariances = pymc_model.deterministics[fc_idx]
 
             smooth_states, smooth_covariances = self.kalman_smoother.build_graph(
-                T, R, Q, filtered_states, filtered_covariances
+                T, R, Q, filtered_states, filtered_covariances, mode=mode
             )
 
             pm.Deterministic("smoothed_states", smooth_states)
@@ -231,16 +231,15 @@ class PyMCStateSpace:
         """
         validate_filter_arg(filter_output)
         pymc_model = modelcontext(None)
-        with pymc_model:
-            with catch_warnings():
-                simplefilter("ignore", category=UserWarning)
-                cond_prior = pm.sample_prior_predictive(
-                    samples=prior_samples,
-                    var_names=[
-                        f"{filter_output}_states",
-                        f"{filter_output}_covariances",
-                    ],
-                )
+        with pymc_model, catch_warnings():
+            simplefilter("ignore", category=UserWarning)
+            cond_prior = pm.sample_prior_predictive(
+                samples=prior_samples,
+                var_names=[
+                    f"{filter_output}_states",
+                    f"{filter_output}_covariances",
+                ],
+            )
 
         _, n, k, *_ = cond_prior.prior[f"{filter_output}_states"].values.squeeze().shape
 
