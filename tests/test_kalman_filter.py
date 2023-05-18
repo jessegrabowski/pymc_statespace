@@ -2,6 +2,7 @@ import unittest
 
 import numpy as np
 import pytensor
+import pytensor.tensor as pt
 import pytest
 from numpy.testing import assert_allclose
 
@@ -56,7 +57,7 @@ output_names = [
 
 def test_base_class_update_raises():
     filter = BaseFilter()
-    inputs = [None] * 6
+    inputs = [None] * 8
     with pytest.raises(NotImplementedError):
         filter.update(*inputs)
 
@@ -92,6 +93,25 @@ def test_output_shapes_when_some_states_are_deterministic(filter_func, output_id
     inputs = make_test_inputs(p, m, r, n)
 
     outputs = filter_func(*inputs)
+    expected_output = get_expected_shape(name, p, m, r, n)
+
+    assert outputs[output_idx].shape == expected_output
+
+
+@pytest.mark.parametrize(("output_idx", "name"), list(enumerate(output_names)), ids=output_names)
+def test_output_shapes_with_time_varying_matrices(filter_func, output_idx, name):
+    p, m, r, n = 1, 5, 2, 10
+    data = pt.dtensor3(name="data")
+    a0 = pt.matrix(name="a0")
+    P0 = pt.matrix(name="P0")
+    Q = pt.dtensor3(name="Q")
+    H = pt.dtensor3(name="H")
+    T = pt.dtensor3(name="T")
+    R = pt.dtensor3(name="R")
+    Z = pt.dtensor3(name="Z")
+
+    inputs = [data, a0, P0, T, Z, R, H, Q]
+
     expected_output = get_expected_shape(name, p, m, r, n)
 
     assert outputs[output_idx].shape == expected_output

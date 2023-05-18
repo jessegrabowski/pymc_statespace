@@ -54,7 +54,7 @@ def validate_filter_arg(filter_arg):
 
 
 class PyMCStateSpace:
-    def __init__(self, data, k_states, k_posdef, filter_type="standard"):
+    def __init__(self, data, k_states, k_posdef, filter_type="standard", verbose=True):
         self.data = data
         self.n_obs, self.k_endog = data.shape
         self.k_states = k_states
@@ -74,17 +74,11 @@ class PyMCStateSpace:
         self.kalman_filter = FILTER_FACTORY[filter_type.lower()]()
         self.kalman_smoother = KalmanSmoother()
 
-        # Placeholders for the pytensor functions that will return the predicted state, covariance, and log likelihood
-        # given parameter vector theta
-
-        self.log_likelihood = None
-        self.ll_obs = None
-
-        self.filtered_states = None
-        self.predicted_states = None
-
-        self.filtered_covariances = None
-        self.predicted_covariances = None
+        if verbose:
+            print(
+                "Model successfully initialized! The following parameters should be assigned priors inside a PyMC "
+                f'model block: {", ".join(self.param_names)}'
+            )
 
     def unpack_statespace(self):
         a0 = self.ssm["initial_state"]

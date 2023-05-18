@@ -15,14 +15,14 @@ nile_data["x"] = nile_data["x"].astype(float)
 
 def initialize_filter(kfilter):
     ksmoother = KalmanSmoother()
-    data = pt.dtensor3()
-    a0 = pt.matrix()
-    P0 = pt.matrix()
-    Q = pt.matrix()
-    H = pt.matrix()
-    T = pt.matrix()
-    R = pt.matrix()
-    Z = pt.matrix()
+    data = pt.dtensor3(name="data")
+    a0 = pt.matrix(name="a0")
+    P0 = pt.matrix(name="P0")
+    Q = pt.matrix(name="Q")
+    H = pt.matrix(name="H")
+    T = pt.matrix(name="T")
+    R = pt.matrix(name="R")
+    Z = pt.matrix(name="Z")
 
     inputs = [data, a0, P0, T, Z, R, H, Q]
 
