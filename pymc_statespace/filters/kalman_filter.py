@@ -83,6 +83,8 @@ class BaseFilter(ABC):
                     f"{name} has {param.ndim}, it should either 2 (static) or 3 (time varying)."
                 )
 
+        print(sequences, non_sequences)
+
         return sequences, non_sequences
 
     def unpack_args(self, args):
