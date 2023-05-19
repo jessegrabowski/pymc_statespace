@@ -1,23 +1,33 @@
+from functools import reduce
 from typing import List, Optional, Tuple, Type, Union
 
 import numpy as np
+import pandas.core.tools.datetimes
 import pytensor.tensor as pt
 from numpy.typing import ArrayLike
+from pandas import DataFrame
 
 KeyLike = Union[Tuple[Union[str, int]], str]
 
 
-class PytensorRepresentation:
-    data = pt.tensor3(name="Data")
-    design = pt.tensor3(name="design")
-    obs_cov = pt.tensor3(name="obs_cov")
-    transition = pt.tensor3(name="transition")
-    selection = pt.tensor3(name="selection")
-    state_cov = pt.tensor3(name="state_cov")
+def _preprocess_data(data: Union[DataFrame, np.ndarray], expected_dims=3):
+    if isinstance(data, pandas.DataFrame):
+        data = data.values
+    elif not isinstance(data, np.ndarray):
+        raise ValueError("Expected pandas Dataframe or numpy array as data")
 
+    if data.ndim < expected_dims:
+        n_dims = data.ndim
+        n_to_add = expected_dims - n_dims + 1
+        data = reduce(lambda a, b: np.expand_dims(a, -1), [data] * n_to_add)
+
+    return data
+
+
+class PytensorRepresentation:
     def __init__(
         self,
-        data: ArrayLike,
+        data: Union[DataFrame, np.ndarray],
         k_states: int,
         k_posdef: int,
         design: Optional[ArrayLike] = None,
@@ -76,7 +86,14 @@ class PytensorRepresentation:
             Oxford University Press.
         """
 
-        self.data = data
+        self.data = pt.tensor3(name="Data")
+        self.design = pt.tensor3(name="design")
+        self.obs_cov = pt.tensor3(name="obs_cov")
+        self.transition = pt.tensor3(name="transition")
+        self.selection = pt.tensor3(name="selection")
+        self.state_cov = pt.tensor3(name="state_cov")
+
+        self.data = _preprocess_data(data)
         self.k_states = k_states
         self.k_posdef = k_posdef if k_posdef is not None else k_states
 

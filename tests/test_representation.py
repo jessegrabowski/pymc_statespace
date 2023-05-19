@@ -25,7 +25,7 @@ class BasicFunctionality(unittest.TestCase):
         m = ssm.k_states
         r = ssm.k_posdef
 
-        self.assertTrue(ssm.data.shape == (10, 1))
+        self.assertTrue(ssm.data.shape == (10, 1, 1))
         self.assertTrue(ssm["design"].eval().shape == (p, m))
         self.assertTrue(ssm["transition"].eval().shape == (m, m))
         self.assertTrue(ssm["selection"].eval().shape == (m, r))
@@ -38,7 +38,7 @@ class BasicFunctionality(unittest.TestCase):
         m = ssm.k_states
         r = ssm.k_posdef
 
-        self.assertTrue(ssm.data.shape == (10, 1))
+        self.assertTrue(ssm.data.shape == (10, 1, 1))
         self.assertTrue(ssm["design"].eval().shape == (p, m))
         self.assertTrue(ssm["transition"].eval().shape == (m, m))
         self.assertTrue(ssm["selection"].eval().shape == (m, r))

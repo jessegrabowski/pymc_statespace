@@ -162,7 +162,7 @@ class PyMCStateSpace:
                 log_likelihood,
                 ll_obs,
             ) = self.kalman_filter.build_graph(
-                at.as_tensor_variable(self.data), *self.unpack_statespace(), mode=mode
+                at.as_tensor_variable(self.ssm.data), *self.unpack_statespace(), mode=mode
             )
 
             pm.Deterministic("filtered_states", filtered_states)
