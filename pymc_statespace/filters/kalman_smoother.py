@@ -5,9 +5,53 @@ import pytensor.tensor as pt
 from pytensor.compile import get_mode
 from pytensor.tensor.nlinalg import matrix_dot
 
+from pymc_statespace.filters.utilities import split_vars_into_seq_and_nonseq
+
 
 class KalmanSmoother:
-    mode: Optional[str] = None
+    def __init__(self, mode: Optional[str] = None):
+        self.mode = mode
+        self.seq_names = []
+        self.non_seq_names = []
+
+    def unpack_args(self, args):
+        """
+        The order of inputs to the inner scan function is not known, since some, all, or none of the input matrices
+        can be time varying. The order arguments are fed to the inner function is sequences, outputs_info,
+        non-sequences. This function works out which matrices are where, and returns a standardized order expected
+        by the kalman_step function.
+
+        The standard order is: a, P, a_smooth, P_smooth, T, R, Q
+        """
+        # If there are no sequence parameters (all params are static),
+        # no changes are needed, params will be in order.
+        args = list(args)
+        n_seq = len(self.seq_names)
+        if n_seq == 0:
+            return args
+
+        # The first two args are always a and P
+        a = args.pop(0)
+        P = args.pop(0)
+
+        # There are always two outputs_info wedged between the seqs and non_seqs
+        seqs, (a_smooth, P_smooth), non_seqs = (
+            args[:n_seq],
+            args[n_seq : n_seq + 2],
+            args[n_seq + 2 :],
+        )
+        return_ordered = []
+        for name in ["T", "R", "Q"]:
+            if name in self.seq_names:
+                idx = self.seq_names.index(name)
+                return_ordered.append(seqs[idx])
+            else:
+                idx = self.non_seq_names.index(name)
+                return_ordered.append(non_seqs[idx])
+
+        T, R, Q = return_ordered
+
+        return a, P, a_smooth, P_smooth, T, R, Q
 
     def build_graph(self, T, R, Q, filtered_states, filtered_covariances, mode=None):
         self.mode = mode
@@ -15,14 +59,21 @@ class KalmanSmoother:
         a_last = filtered_states[-1]
         P_last = filtered_covariances[-1]
 
+        sequences, non_sequences, seq_names, non_seq_names = split_vars_into_seq_and_nonseq(
+            [T, R, Q], ["T", "R", "Q"]
+        )
+
+        self.seq_names = seq_names
+        self.non_seq_names = non_seq_names
+
         smoother_result, updates = pytensor.scan(
             self.smoother_step,
-            sequences=[filtered_states[:-1], filtered_covariances[:-1]],
+            sequences=[filtered_states[:-1], filtered_covariances[:-1]] + sequences,
             outputs_info=[a_last, P_last],
-            non_sequences=[T, R, Q],
+            non_sequences=non_sequences,
             go_backwards=True,
             name="kalman_smoother",
-            mode=get_mode(self.mode)
+            mode=get_mode(self.mode),
         )
 
         smoothed_states, smoothed_covariances = smoother_result
@@ -33,7 +84,8 @@ class KalmanSmoother:
 
         return smoothed_states, smoothed_covariances
 
-    def smoother_step(self, a, P, a_smooth, P_smooth, T, R, Q):
+    def smoother_step(self, *args):
+        a, P, a_smooth, P_smooth, T, R, Q = self.unpack_args(args)
         a_hat, P_hat = self.predict(a, P, T, R, Q)
 
         # Use pinv, otherwise P_hat is singular when there is missing data
@@ -42,7 +94,7 @@ class KalmanSmoother:
 
         P_smooth_next = P + matrix_dot(smoother_gain, P_smooth - P_hat, smoother_gain.T)
 
-        return a_smooth_next, P_smooth_next  #
+        return a_smooth_next, P_smooth_next
 
     @staticmethod
     def predict(a, P, T, R, Q):

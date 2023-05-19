@@ -1,5 +1,5 @@
 from abc import ABC
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 import numpy as np
 import pytensor
@@ -10,20 +10,99 @@ from pytensor.tensor import TensorVariable
 from pytensor.tensor.nlinalg import matrix_dot
 from pytensor.tensor.slinalg import SolveTriangular
 
+from pymc_statespace.filters.utilities import split_vars_into_seq_and_nonseq
 from pymc_statespace.utils.pytensor_scipy import solve_discrete_are
 
 MVN_CONST = pt.log(2 * pt.constant(np.pi, dtype="float64"))
+PARAM_NAMES = ["c", "d", "T", "Z", "R", "H", "Q"]
 solve_lower_triangular = SolveTriangular(lower=True)
 assert_data_is_1d = Assert("UnivariateTimeSeries filter requires data be at most 1-dimensional")
+assert_time_varying_dim_correct = Assert(
+    "The first dimension of a time varying matrix (the time dimension) must be "
+    "equal to the first dimension of the data (the time dimension)."
+)
 
 
 class BaseFilter(ABC):
-    mode: Optional[str] = None
+    def __init__(self, mode=None):
+        self.mode = mode
+        self.seq_names = []
+        self.non_seq_names = []
 
-    def check_params(self, data, a0, P0, T, Z, R, H, Q):
-        return data, a0, P0, T, Z, R, H, Q
+    @staticmethod
+    def initialize_intercepts(c, d, Z):
+        """
+        # TODO: Should this be handled in the StateSpaceModel object instead, and the KF should demand they are always
+            given?
+        """
+        m, p, *_ = Z.shape
 
-    def build_graph(self, data, a0, P0, T, Z, R, H, Q, mode=None) -> List[TensorVariable]:
+        if c is None:
+            c = pt.zeros((p, 1))
+            c.name = "c"
+        if d is None:
+            d = pt.zeros((m, 1))
+            d.name = "d"
+
+        return c, d
+
+    def check_params(self, data, a0, P0, c, d, T, Z, R, H, Q):
+        """
+        Apply any checks on validity of inputs. For most filters this is just the identity function.
+        """
+        c, d = self.initialize_intercepts(c, d, Z)
+        return data, a0, P0, c, d, T, Z, R, H, Q
+
+    @staticmethod
+    def check_time_varying_shapes(data, sequence_params):
+        """
+        If any matrices are time-varying, make sure the number of matrices is equal to the number of time steps.
+        # TODO: The PytensorRepresentation object puts the time dimension last, should the reshaping happen here in
+            the Kalman filter, or in the StateSpaceModel, before passing into the KF?
+        """
+        n_steps = data.shape[0]
+        return [
+            assert_time_varying_dim_correct(param, pt.eq(param.shape[0], n_steps))
+            for param in sequence_params
+        ]
+
+    def unpack_args(self, args):
+        """
+        The order of inputs to the inner scan function is not known, since some, all, or none of the input matrices
+        can be time varying. The order arguments are fed to the inner function is sequences, outputs_info,
+        non-sequences. This function works out which matrices are where, and returns a standardized order expected
+        by the kalman_step function.
+
+        The standard order is: y, a0, P0, c, d, T, Z, R, H, Q
+        """
+        # If there are no sequence parameters (all params are static),
+        # no changes are needed, params will be in order.
+        args = list(args)
+        n_seq = len(self.seq_names)
+        if n_seq == 0:
+            return args
+
+        # The first arg is always y
+        y = args.pop(0)
+
+        # There are always two outputs_info wedged between the seqs and non_seqs
+        seqs, (a0, P0), non_seqs = args[:n_seq], args[n_seq : n_seq + 2], args[n_seq + 2 :]
+        return_ordered = []
+        for name in ["c", "d", "T", "Z", "R", "H", "Q"]:
+            if name in self.seq_names:
+                idx = self.seq_names.index(name)
+                return_ordered.append(seqs[idx])
+            else:
+                idx = self.non_seq_names.index(name)
+                return_ordered.append(non_seqs[idx])
+
+        c, d, T, Z, R, H, Q = return_ordered
+
+        return y, a0, P0, c, d, T, Z, R, H, Q
+
+    def build_graph(
+        self, data, a0, P0, T, Z, R, H, Q, c=None, d=None, mode=None
+    ) -> List[TensorVariable]:
         """
         Construct the computation graph for the Kalman filter. See [1] for details.
 
@@ -32,16 +111,25 @@ class BaseFilter(ABC):
         .. [1] Koopman, Siem Jan, Neil Shephard, and Jurgen A. Doornik. 1999.
            Statistical Algorithms for Models in State Space Using SsfPack 2.2.
            Econometrics Journal 2 (1): 107-60. doi:10.1111/1368-423X.00023.
-        TODO: Add a check for time-varying matrices (ndim > 2) and add matrices to scan sequences if so.
         """
         self.mode = mode
-        data, a0, P0, T, Z, R, H, Q = self.check_params(data, a0, P0, T, Z, R, H, Q)
+
+        data, a0, P0, *params = self.check_params(data, a0, P0, c, d, T, Z, R, H, Q)
+        sequences, non_sequences, seq_names, non_seq_names = split_vars_into_seq_and_nonseq(
+            params, PARAM_NAMES
+        )
+
+        self.seq_names = seq_names
+        self.non_seq_names = non_seq_names
+
+        if len(sequences) > 0:
+            sequences = self.check_time_varying_shapes(data, sequences)
 
         results, updates = pytensor.scan(
             self.kalman_step,
-            sequences=[data],
+            sequences=[data] + sequences,
             outputs_info=[None, a0, None, P0, None],
-            non_sequences=[T, Z, R, H, Q],
+            non_sequences=non_sequences,
             name="forward_kalman_pass",
             mode=get_mode(mode),
         )
@@ -52,6 +140,12 @@ class BaseFilter(ABC):
 
     @staticmethod
     def _postprocess_scan_results(results, a0, P0) -> List[TensorVariable]:
+        """
+        Transform the values returned by the Kalman Filter scan into a form expected by users. In particular:
+            1. Append the initial state and covariance matrix to their respective Kalman predictions. This matches the
+                output returned by Statsmodels state space models.
+            2. Squeeze away the 3rd dimension from the filtered and predicted states, as well as the likelihoods.
+        """
         (
             filtered_states,
             predicted_states,
@@ -60,8 +154,6 @@ class BaseFilter(ABC):
             log_likelihoods,
         ) = results
 
-        # This follows the Statsmodels output, which appends x0 and P0 to the predicted states, but not to the
-        # filtered states
         predicted_states = pt.concatenate([pt.atleast_3d(a0), predicted_states], axis=0)
         predicted_covariances = pt.concatenate([pt.atleast_3d(P0), predicted_covariances], axis=0)
 
@@ -83,6 +175,7 @@ class BaseFilter(ABC):
         to avoid propagating the NaNs. Return a flag if everything is missing (needed for numerical adjustments in the
         update methods)
 
+        # TODO: Do the intercepts need to be masked as well?
         """
         nan_mask = pt.isnan(y)
         all_nan_flag = pt.all(nan_mask).astype(pytensor.config.floatX)
@@ -96,8 +189,8 @@ class BaseFilter(ABC):
         return y_masked, Z_masked, H_masked, all_nan_flag
 
     @staticmethod
-    def predict(a, P, T, R, Q) -> Tuple[TensorVariable, TensorVariable]:
-        a_hat = T.dot(a)
+    def predict(a, P, c, T, R, Q) -> Tuple[TensorVariable, TensorVariable]:
+        a_hat = T.dot(a) + c
         P_hat = matrix_dot(T, P, T.T) + matrix_dot(R, Q, R.T)
 
         # Force P_hat to be symmetric
@@ -107,12 +200,12 @@ class BaseFilter(ABC):
 
     @staticmethod
     def update(
-        a, P, y, Z, H, all_nan_flag
+        a, P, y, c, d, Z, H, all_nan_flag
     ) -> Tuple[TensorVariable, TensorVariable, TensorVariable]:
         raise NotImplementedError
 
     def kalman_step(
-        self, y, a, P, T, Z, R, H, Q
+        self, *args
     ) -> Tuple[TensorVariable, TensorVariable, TensorVariable, TensorVariable, TensorVariable]:
         """
         The timing convention follows [1]. a0 and P0 are taken to be predicted states, so we begin
@@ -122,26 +215,28 @@ class BaseFilter(ABC):
         .. [1] Durbin, J., and S. J. Koopman. Time Series Analysis by State Space Methods.
                2nd ed, Oxford University Press, 2012.
         """
+        y, a, P, c, d, T, Z, R, H, Q = self.unpack_args(args)
+
         y_masked, Z_masked, H_masked, all_nan_flag = self.handle_missing_values(y, Z, H)
 
         a_filtered, P_filtered, ll = self.update(
-            y=y_masked, a=a, P=P, Z=Z_masked, H=H_masked, all_nan_flag=all_nan_flag
+            y=y_masked, a=a, c=c, d=d, P=P, Z=Z_masked, H=H_masked, all_nan_flag=all_nan_flag
         )
 
-        a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, T=T, R=R, Q=Q)
+        a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, c=c, T=T, R=R, Q=Q)
 
         return a_filtered, a_hat, P_filtered, P_hat, ll
 
 
 class StandardFilter(BaseFilter):
     @staticmethod
-    def update(a, P, y, Z, H, all_nan_flag):
+    def update(a, P, y, c, d, Z, H, all_nan_flag):
         """
         Conjugate update rule for the mean and covariance matrix, with log-likelihood en passant
         TODO: Verify these equations are correct if there are multiple endogenous variables.
         TODO: Is there a more elegant way to handle nans?
         """
-        v = y - Z.dot(a)
+        v = y - Z.dot(a) - d
 
         PZT = P.dot(Z.T)
         F = Z.dot(PZT) + H
@@ -168,8 +263,8 @@ class StandardFilter(BaseFilter):
 
 class CholeskyFilter(BaseFilter):
     @staticmethod
-    def update(a, P, y, Z, H, all_nan_flag):
-        v = y - Z.dot(a)
+    def update(a, P, y, c, d, Z, H, all_nan_flag):
+        v = y - Z.dot(a) - d
 
         PZT = P.dot(Z.T)
 
@@ -207,14 +302,16 @@ class SingleTimeseriesFilter(BaseFilter):
     perform a matrix inversion anywhere in the filter.
     """
 
-    def check_params(self, data, a0, P0, T, Z, R, H, Q):
+    def check_params(self, data, a0, P0, c, d, T, Z, R, H, Q):
+        c, d = self.initialize_intercepts(c, d, Z)
         data = assert_data_is_1d(data, pt.eq(data.shape[1], 1))
-        return data, a0, P0, T, Z, R, H, Q
+
+        return data, a0, P0, c, d, T, Z, R, H, Q
 
     @staticmethod
-    def update(a, P, y, Z, H, all_nan_flag):
+    def update(a, P, y, c, d, Z, H, all_nan_flag):
         # y, v are scalar, but a might not be
-        y_hat = Z.dot(a).ravel()
+        y_hat = Z.dot(a).ravel() - d
         v = y - y_hat
 
         PZT = P.dot(Z.T)
@@ -243,22 +340,32 @@ class SteadyStateFilter(BaseFilter):
     only have differences from the standard approach in the early steps (T < 10?). A process of "learning" is lost.
     """
 
-    def build_graph(self, data, a0, P0, T, Z, R, H, Q, mode=None):
+    def build_graph(self, data, a0, P0, T, Z, R, H, Q, c=None, d=None, mode=None):
         """
         Need to override the base step to add an argument to self.update, passing F_inv at every step.
         """
+        data, a0, P0, *params = self.check_params(data, a0, P0, c, d, T, Z, R, H, Q)
+        sequences, non_sequences, seq_names, non_seq_names = split_vars_into_seq_and_nonseq(
+            params, PARAM_NAMES
+        )
+        self.seq_names = seq_names
+        self.non_seq_names = non_seq_names
+        c, d, T, Z, R, H, Q = params
+
+        if len(sequences) > 0:
+            assert ValueError(
+                "All system matrices must be time-invariant to use the SteadyStateFilter"
+            )
 
         P_steady = solve_discrete_are(T.T, Z.T, matrix_dot(R, Q, R.T), H)
         F = matrix_dot(Z, P_steady, Z.T) + H
         F_inv = pt.linalg.solve(F, pt.eye(F.shape[0]), assume_a="pos")
-        printop1 = pytensor.printing.Print("F_inv")
-        F_inv = printop1(F_inv)
 
         results, updates = pytensor.scan(
             self.kalman_step,
             sequences=[data],
             outputs_info=[None, a0, None, P_steady, None],
-            non_sequences=[F_inv, T, Z, R, H, Q],
+            non_sequences=[c, d, F_inv, T, Z, R, H, Q],
             name="forward_kalman_pass",
             mode=get_mode(mode),
         )
@@ -266,17 +373,13 @@ class SteadyStateFilter(BaseFilter):
         return self._postprocess_scan_results(results, a0, P0)
 
     @staticmethod
-    def update(a, P, F_inv, y, Z, H, all_nan_flag):
+    def update(a, P, c, d, F_inv, y, Z, H, all_nan_flag):
         v = y - Z.dot(a)
 
         PZT = P.dot(Z.T)
-        printop2 = pytensor.printing.Print("PZT")
-        PZT = printop2(PZT)
 
         F = Z.dot(PZT) + H
         K = PZT.dot(F_inv)
-        printop3 = pytensor.printing.Print("K")
-        K = printop3(K)
 
         I_KZ = pt.eye(K.shape[0]) - K.dot(Z)
 
@@ -292,7 +395,7 @@ class SteadyStateFilter(BaseFilter):
 
         return a_filtered, P_filtered, ll
 
-    def kalman_step(self, y, a, P, F_inv, T, Z, R, H, Q):
+    def kalman_step(self, y, a, P, c, d, F_inv, T, Z, R, H, Q):
         """
         Need to override the base step to add an argument to self.update, passing F_inv at every step.
         """
@@ -302,13 +405,15 @@ class SteadyStateFilter(BaseFilter):
             y=y_masked,
             a=a,
             P=P,
+            c=c,
+            d=d,
             F_inv=F_inv,
             Z=Z_masked,
             H=H_masked,
             all_nan_flag=all_nan_flag,
         )
 
-        a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, T=T, R=R, Q=Q)
+        a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, c=c, T=T, R=R, Q=Q)
 
         return a_filtered, a_hat, P_filtered, P_hat, ll
 
@@ -330,9 +435,9 @@ class UnivariateFilter(BaseFilter):
     """
 
     @staticmethod
-    def _univariate_inner_filter_step(y, Z_row, sigma_H, nan_flag, a, P):
+    def _univariate_inner_filter_step(y, Z_row, d_row, sigma_H, nan_flag, a, P):
         Z_row = Z_row[None, :]
-        v = y - Z_row.dot(a)
+        v = y - Z_row.dot(a) - d_row
 
         PZT = P.dot(Z_row.T)
         F = Z_row.dot(PZT) + sigma_H
@@ -351,7 +456,7 @@ class UnivariateFilter(BaseFilter):
 
         return a_filtered, P_filtered, ll_inner
 
-    def kalman_step(self, y, a, P, T, Z, R, H, Q):
+    def kalman_step(self, y, a, P, c, d, T, Z, R, H, Q):
         y = y[:, None]
         nan_mask = pt.isnan(y).ravel()
 
@@ -362,7 +467,7 @@ class UnivariateFilter(BaseFilter):
 
         result, updates = pytensor.scan(
             self._univariate_inner_filter_step,
-            sequences=[y_masked, Z_masked, pt.diag(H_masked), nan_mask],
+            sequences=[y_masked, Z_masked, d, pt.diag(H_masked), nan_mask],
             outputs_info=[a, P, None],
             mode=get_mode(self.mode),
         )
@@ -370,7 +475,7 @@ class UnivariateFilter(BaseFilter):
         a_filtered, P_filtered, ll_inner = result
         a_filtered, P_filtered = a_filtered[-1], P_filtered[-1]
 
-        a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, T=T, R=R, Q=Q)
+        a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, c=c, T=T, R=R, Q=Q)
 
         ll = -0.5 * ((pt.neq(ll_inner, 0).sum()) * MVN_CONST + ll_inner.sum())
 

@@ -2,11 +2,13 @@ import unittest
 
 import numpy as np
 import pytensor
+import pytensor.tensor as pt
 import pytest
 from numpy.testing import assert_allclose
 
 from pymc_statespace.filters import (
     CholeskyFilter,
+    KalmanSmoother,
     SingleTimeseriesFilter,
     StandardFilter,
     SteadyStateFilter,
@@ -56,7 +58,7 @@ output_names = [
 
 def test_base_class_update_raises():
     filter = BaseFilter()
-    inputs = [None] * 6
+    inputs = [None] * 8
     with pytest.raises(NotImplementedError):
         filter.update(*inputs)
 
@@ -92,6 +94,63 @@ def test_output_shapes_when_some_states_are_deterministic(filter_func, output_id
     inputs = make_test_inputs(p, m, r, n)
 
     outputs = filter_func(*inputs)
+    expected_output = get_expected_shape(name, p, m, r, n)
+
+    assert outputs[output_idx].shape == expected_output
+
+
+@pytest.fixture
+def f_standard_nd():
+    ksmoother = KalmanSmoother()
+    data = pt.dtensor3(name="data")
+    a0 = pt.matrix(name="a0")
+    P0 = pt.matrix(name="P0")
+    Q = pt.dtensor3(name="Q")
+    H = pt.dtensor3(name="H")
+    T = pt.dtensor3(name="T")
+    R = pt.dtensor3(name="R")
+    Z = pt.dtensor3(name="Z")
+
+    inputs = [data, a0, P0, T, Z, R, H, Q]
+
+    (
+        filtered_states,
+        predicted_states,
+        filtered_covs,
+        predicted_covs,
+        log_likelihood,
+        ll_obs,
+    ) = StandardFilter().build_graph(*inputs)
+
+    smoothed_states, smoothed_covs = ksmoother.build_graph(T, R, Q, filtered_states, filtered_covs)
+
+    outputs = [
+        filtered_states,
+        predicted_states,
+        smoothed_states,
+        filtered_covs,
+        predicted_covs,
+        smoothed_covs,
+        log_likelihood,
+        ll_obs,
+    ]
+
+    f_standard = pytensor.function(inputs, outputs)
+
+    return f_standard
+
+
+@pytest.mark.parametrize(("output_idx", "name"), list(enumerate(output_names)), ids=output_names)
+def test_output_shapes_with_time_varying_matrices(f_standard_nd, output_idx, name):
+    p, m, r, n = 1, 5, 2, 10
+    data, a0, P0, T, Z, R, H, Q = make_test_inputs(p, m, r, n)
+    T = np.concatenate([np.expand_dims(T, 0)] * n, axis=0)
+    Z = np.concatenate([np.expand_dims(Z, 0)] * n, axis=0)
+    R = np.concatenate([np.expand_dims(R, 0)] * n, axis=0)
+    H = np.concatenate([np.expand_dims(H, 0)] * n, axis=0)
+    Q = np.concatenate([np.expand_dims(Q, 0)] * n, axis=0)
+
+    outputs = f_standard_nd(data, a0, P0, T, Z, R, H, Q)
     expected_output = get_expected_shape(name, p, m, r, n)
 
     assert outputs[output_idx].shape == expected_output
