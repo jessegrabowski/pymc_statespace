@@ -60,7 +60,7 @@ class KalmanSmoother:
         P_last = filtered_covariances[-1]
 
         sequences, non_sequences, seq_names, non_seq_names = split_vars_into_seq_and_nonseq(
-            [T, R, Q]
+            [T, R, Q], ["T", "R", "Q"]
         )
 
         self.seq_names = seq_names

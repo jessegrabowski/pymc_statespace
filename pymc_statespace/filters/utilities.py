@@ -1,8 +1,7 @@
-def split_vars_into_seq_and_nonseq(params):
+def split_vars_into_seq_and_nonseq(params, param_names):
     """
     Split inputs into those that are time varying and those that are not. This division is required by scan.
     """
-    param_names = ["c", "d", "T", "Z", "R", "H", "Q"]
     sequences, non_sequences = [], []
     seq_names, non_seq_names = [], []
 

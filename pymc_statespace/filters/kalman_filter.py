@@ -14,6 +14,7 @@ from pymc_statespace.filters.utilities import split_vars_into_seq_and_nonseq
 from pymc_statespace.utils.pytensor_scipy import solve_discrete_are
 
 MVN_CONST = pt.log(2 * pt.constant(np.pi, dtype="float64"))
+PARAM_NAMES = ["c", "d", "T", "Z", "R", "H", "Q"]
 solve_lower_triangular = SolveTriangular(lower=True)
 assert_data_is_1d = Assert("UnivariateTimeSeries filter requires data be at most 1-dimensional")
 assert_time_varying_dim_correct = Assert(
@@ -114,7 +115,9 @@ class BaseFilter(ABC):
         self.mode = mode
 
         data, a0, P0, *params = self.check_params(data, a0, P0, c, d, T, Z, R, H, Q)
-        sequences, non_sequences, seq_names, non_seq_names = split_vars_into_seq_and_nonseq(params)
+        sequences, non_sequences, seq_names, non_seq_names = split_vars_into_seq_and_nonseq(
+            params, PARAM_NAMES
+        )
 
         self.seq_names = seq_names
         self.non_seq_names = non_seq_names
@@ -342,7 +345,11 @@ class SteadyStateFilter(BaseFilter):
         Need to override the base step to add an argument to self.update, passing F_inv at every step.
         """
         data, a0, P0, *params = self.check_params(data, a0, P0, c, d, T, Z, R, H, Q)
-        sequences, non_sequences = self.split_vars_into_seq_and_nonseq(params)
+        sequences, non_sequences, seq_names, non_seq_names = split_vars_into_seq_and_nonseq(
+            params, PARAM_NAMES
+        )
+        self.seq_names = seq_names
+        self.non_seq_names = non_seq_names
         c, d, T, Z, R, H, Q = params
 
         if len(sequences) > 0:
