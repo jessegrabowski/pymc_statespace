@@ -4,6 +4,7 @@ import numpy as np
 import pytensor.tensor as at
 
 from pymc_statespace.core.statespace import PyMCStateSpace
+from pymc_statespace.models.utilities import get_slice_and_move_cursor
 from pymc_statespace.utils.pytensor_scipy import solve_discrete_lyapunov
 
 
@@ -35,12 +36,11 @@ class BayesianVARMAX(PyMCStateSpace):
             "P0": k_states**2 * (1 - self.stationary_initialization),
             "AR": k_obs**2 * self.p,
             "MA": k_obs**2 * self.q,
-            "state_cov": k_obs**2,
+            "state_cov": k_posdef**2,
             "obs_cov": k_obs * self.measurement_error,
         }
 
         # Initialize the matrices
-
         # Design matrix is a truncated identity (first k_obs states observed)
         self.ssm[("design",) + np.diag_indices(k_obs)] = 1
 
@@ -76,7 +76,7 @@ class BayesianVARMAX(PyMCStateSpace):
 
         # Cache some indices
         self._ar_param_idx = ("transition", slice(0, k_obs), slice(0, k_obs * self.p))
-        self._ma_param_idx = ("transition", slice(0, k_obs), slice(k_obs * self.p, None))
+        self._ma_param_idx = ("transition", slice(0, k_obs), slice(k_obs * max(1, self.p), None))
         self._obs_cov_idx = ("obs_cov",) + np.diag_indices(k_obs)
 
     @property
@@ -91,48 +91,49 @@ class BayesianVARMAX(PyMCStateSpace):
     def update(self, theta: at.TensorVariable) -> None:
         """
         Put parameter values from vector theta into the correct positions in the state space matrices.
-        TODO: Can this be done using variable names to avoid the need to ravel and concatenate all RVs in the
-              PyMC model?
 
         Parameters
         ----------
         theta: TensorVariable
             Vector of all variables in the state space model
         """
-        cursor = 0
 
+        cursor = 0
         # initial states
-        param_slice = slice(cursor, cursor + self.param_counts["x0"])
-        cursor += self.param_counts["x0"]
+        param_slice, cursor = get_slice_and_move_cursor(cursor, self.param_counts["x0"])
         self.ssm["initial_state", :, 0] = theta[param_slice]
 
         if not self.stationary_initialization:
             # initial covariance
-            param_slice = slice(cursor, self.param_counts["P0"])
-            cursor += self.param_counts["P0"]
+            param_slice, cursor = get_slice_and_move_cursor(cursor, self.param_counts["P0"])
             self.ssm["initial_state_cov", :, :] = theta[param_slice].reshape(
                 (self.k_states, self.k_states)
             )
 
-        # AR parameteres
-        param_slice = slice(cursor, cursor + self.param_counts["AR"])
-        cursor += self.param_counts["AR"]
-        self.ssm[self._ar_param_idx] = theta[param_slice]
+        # AR parameters
+        if self.p > 0:
+            ar_shape = (self.k_endog, self.k_endog * self.p)
+            param_slice, cursor = get_slice_and_move_cursor(cursor, self.param_counts["AR"])
+            self.ssm[self._ar_param_idx] = theta[param_slice].reshape(ar_shape)
 
         # MA parameters
-        param_slice = slice(cursor, cursor + self.param_counts["MA"])
-        cursor += self.param_counts["AR"]
-        self.ssm[self._ma_param_idx] = theta[param_slice]
+        if self.q > 0:
+            ma_shape = (self.k_endog, self.k_endog * self.q)
+            param_slice, cursor = get_slice_and_move_cursor(cursor, self.param_counts["MA"])
+            self.ssm[self._ma_param_idx] = theta[param_slice].reshape(ma_shape)
 
         # State covariance
-        param_slice = slice(cursor, self.param_counts["state_cov"])
-        cursor += self.param_counts["state_cov"]
-        self.ssm["state_cov"] = theta[param_slice]
+        param_slice, cursor = get_slice_and_move_cursor(
+            cursor, self.param_counts["state_cov"], last_slice=not self.measurement_error
+        )
+
+        self.ssm["state_cov", :, :] = theta[param_slice].reshape((self.k_posdef, self.k_posdef))
 
         # Measurement error
         if self.measurement_error:
-            param_slice = slice(cursor, self.param_counts["obs_cov"])
-            cursor += self.param_counts["obs_cov"]
+            param_slice, cursor = get_slice_and_move_cursor(
+                cursor, self.param_counts["obs_cov"], last_slice=True
+            )
             self.ssm[self._obs_cov_idx] = theta[param_slice]
 
         if self.stationary_initialization:

@@ -5,33 +5,14 @@ import pytensor.tensor as pt
 from pytensor.compile import get_mode
 from pytensor.tensor.nlinalg import matrix_dot
 
+from pymc_statespace.filters.utilities import split_vars_into_seq_and_nonseq
+
 
 class KalmanSmoother:
     def __init__(self, mode: Optional[str] = None):
         self.mode = mode
         self.seq_names = []
         self.non_seq_names = []
-
-    def split_vars_into_seq_and_nonseq(self, params):
-        """
-        Split inputs into those that are time varying and those that are not. This division is required by scan.
-        """
-        param_names = ["T", "R", "Q"]
-        sequences, non_sequences = [], []
-
-        for param, name in zip(params, param_names):
-            if param.ndim == 2:
-                non_sequences.append(param)
-                self.non_seq_names.append(name)
-            elif param.ndim == 3:
-                sequences.append(param)
-                self.seq_names.append(name)
-            else:
-                raise ValueError(
-                    f"{name} has {param.ndim}, it should either 2 (static) or 3 (time varying)."
-                )
-
-        return sequences, non_sequences
 
     def unpack_args(self, args):
         """
@@ -78,7 +59,12 @@ class KalmanSmoother:
         a_last = filtered_states[-1]
         P_last = filtered_covariances[-1]
 
-        sequences, non_sequences = self.split_vars_into_seq_and_nonseq([T, R, Q])
+        sequences, non_sequences, seq_names, non_seq_names = split_vars_into_seq_and_nonseq(
+            [T, R, Q]
+        )
+
+        self.seq_names = seq_names
+        self.non_seq_names = non_seq_names
 
         smoother_result, updates = pytensor.scan(
             self.smoother_step,
@@ -108,7 +94,7 @@ class KalmanSmoother:
 
         P_smooth_next = P + matrix_dot(smoother_gain, P_smooth - P_hat, smoother_gain.T)
 
-        return a_smooth_next, P_smooth_next  #
+        return a_smooth_next, P_smooth_next
 
     @staticmethod
     def predict(a, P, T, R, Q):

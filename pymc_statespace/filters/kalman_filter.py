@@ -10,6 +10,7 @@ from pytensor.tensor import TensorVariable
 from pytensor.tensor.nlinalg import matrix_dot
 from pytensor.tensor.slinalg import SolveTriangular
 
+from pymc_statespace.filters.utilities import split_vars_into_seq_and_nonseq
 from pymc_statespace.utils.pytensor_scipy import solve_discrete_are
 
 MVN_CONST = pt.log(2 * pt.constant(np.pi, dtype="float64"))
@@ -64,29 +65,6 @@ class BaseFilter(ABC):
             for param in sequence_params
         ]
 
-    def split_vars_into_seq_and_nonseq(self, params):
-        """
-        Split inputs into those that are time varying and those that are not. This division is required by scan.
-        """
-        param_names = ["c", "d", "T", "Z", "R", "H", "Q"]
-        sequences, non_sequences = [], []
-
-        for param, name in zip(params, param_names):
-            if param.ndim == 2:
-                non_sequences.append(param)
-                self.non_seq_names.append(name)
-            elif param.ndim == 3:
-                sequences.append(param)
-                self.seq_names.append(name)
-            else:
-                raise ValueError(
-                    f"{name} has {param.ndim}, it should either 2 (static) or 3 (time varying)."
-                )
-
-        print(sequences, non_sequences)
-
-        return sequences, non_sequences
-
     def unpack_args(self, args):
         """
         The order of inputs to the inner scan function is not known, since some, all, or none of the input matrices
@@ -136,7 +114,10 @@ class BaseFilter(ABC):
         self.mode = mode
 
         data, a0, P0, *params = self.check_params(data, a0, P0, c, d, T, Z, R, H, Q)
-        sequences, non_sequences = self.split_vars_into_seq_and_nonseq(params)
+        sequences, non_sequences, seq_names, non_seq_names = split_vars_into_seq_and_nonseq(params)
+
+        self.seq_names = seq_names
+        self.non_seq_names = non_seq_names
 
         if len(sequences) > 0:
             sequences = self.check_time_varying_shapes(data, sequences)
