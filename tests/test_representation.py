@@ -25,7 +25,7 @@ class BasicFunctionality(unittest.TestCase):
         m = ssm.k_states
         r = ssm.k_posdef
 
-        self.assertTrue(ssm.data.shape == (10, 1))
+        self.assertTrue(ssm.data.shape == (10, 1, 1))
         self.assertTrue(ssm["design"].eval().shape == (p, m))
         self.assertTrue(ssm["transition"].eval().shape == (m, m))
         self.assertTrue(ssm["selection"].eval().shape == (m, r))
@@ -38,7 +38,7 @@ class BasicFunctionality(unittest.TestCase):
         m = ssm.k_states
         r = ssm.k_posdef
 
-        self.assertTrue(ssm.data.shape == (10, 1))
+        self.assertTrue(ssm.data.shape == (10, 1, 1))
         self.assertTrue(ssm["design"].eval().shape == (p, m))
         self.assertTrue(ssm["transition"].eval().shape == (m, m))
         self.assertTrue(ssm["selection"].eval().shape == (m, r))
@@ -82,6 +82,22 @@ class BasicFunctionality(unittest.TestCase):
         ]
         for name, X in zip(names, inputs[1:]):
             self.assertTrue(np.allclose(X, ssm[name].eval()))
+
+    def test_assign_time_varying_matrices(self):
+        ssm = PytensorRepresentation(data=self.data, k_states=5, k_posdef=2)
+        n = self.data.shape[0]
+
+        ssm["design", 0, 0] = 3.0
+        ssm["transition", 0, :] = 2.7
+        ssm["selection", -1, -1] = 9.9
+
+        ssm["state_intercept"] = np.zeros((5, 1, self.data.shape[0]))
+        ssm["state_intercept", 0, 0, :] = np.arange(n)
+
+        self.assertTrue(ssm["design"].eval()[0, 0] == 3.0)
+        self.assertTrue(np.all(ssm["transition"].eval()[0, :] == 2.7))
+        self.assertTrue(ssm["selection"].eval()[-1, -1] == 9.9)
+        self.assertTrue(np.allclose(ssm["state_intercept"][0, 0, :].eval(), np.arange(n)))
 
     def test_invalid_key_name_raises(self):
         ssm = PytensorRepresentation(data=self.data, k_states=5, k_posdef=1)

@@ -86,6 +86,10 @@ class BayesianVARMAX(PyMCStateSpace):
             names.remove("P0")
         if not self.measurement_error:
             names.remove("obs_cov")
+        if self.p == 0:
+            names.remove("ar_params")
+        if self.q == 0:
+            names.remove("ma_params")
         return names
 
     def update(self, theta: at.TensorVariable) -> None:

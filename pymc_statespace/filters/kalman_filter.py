@@ -29,6 +29,10 @@ class BaseFilter(ABC):
         self.seq_names = []
         self.non_seq_names = []
 
+        self.eye_states = None
+        self.eye_posdef = None
+        self.eye_endog = None
+
     @staticmethod
     def initialize_intercepts(c, d, Z):
         """
@@ -45,6 +49,25 @@ class BaseFilter(ABC):
             d.name = "d"
 
         return c, d
+
+    def initialize_eyes(self, R, Z):
+        """
+        It's surprisingly expensive for pytensor to create an identity matrix every time we need one for e.g. a matrix
+        inversion (see [1] for benchmarks). This function creates some identity matrices of useful sizes for the model
+        to re-use as a small optimization.
+
+        Also, we're not sure whether R or Z are time-varying when this function is called, so the states are indexed
+        from the back.
+
+        References
+        ----------
+        .. [1] https://gist.github.com/jessegrabowski/acd3235833163943a11654d78a72f04b
+        """
+
+        n_states, n_posdef, n_endog = R.shape[-2], R.shape[-1], Z.shape[-2]
+        self.eye_states = pt.eye(n_states)
+        self.eye_posdef = pt.eye(n_posdef)
+        self.eye_endog = pt.eye(n_endog)
 
     def check_params(self, data, a0, P0, c, d, T, Z, R, H, Q):
         """
@@ -113,6 +136,7 @@ class BaseFilter(ABC):
            Econometrics Journal 2 (1): 107-60. doi:10.1111/1368-423X.00023.
         """
         self.mode = mode
+        self.initialize_eyes(R, Z)
 
         data, a0, P0, *params = self.check_params(data, a0, P0, c, d, T, Z, R, H, Q)
         sequences, non_sequences, seq_names, non_seq_names = split_vars_into_seq_and_nonseq(
@@ -229,8 +253,7 @@ class BaseFilter(ABC):
 
 
 class StandardFilter(BaseFilter):
-    @staticmethod
-    def update(a, P, y, c, d, Z, H, all_nan_flag):
+    def update(self, a, P, y, c, d, Z, H, all_nan_flag):
         """
         Conjugate update rule for the mean and covariance matrix, with log-likelihood en passant
         TODO: Verify these equations are correct if there are multiple endogenous variables.
@@ -242,11 +265,11 @@ class StandardFilter(BaseFilter):
         F = Z.dot(PZT) + H
 
         F_inv = pt.linalg.solve(
-            F + pt.eye(F.shape[0]) * all_nan_flag, pt.eye(F.shape[0]), assume_a="pos"
+            F + self.eye_endog * all_nan_flag, self.eye_endog, assume_a="pos", check_finite=False
         )
 
         K = PZT.dot(F_inv)
-        I_KZ = pt.eye(K.shape[0]) - K.dot(Z)
+        I_KZ = self.eye_states - K.dot(Z)
 
         a_filtered = a + K.dot(v)
         P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)  # Joseph form
@@ -262,14 +285,13 @@ class StandardFilter(BaseFilter):
 
 
 class CholeskyFilter(BaseFilter):
-    @staticmethod
-    def update(a, P, y, c, d, Z, H, all_nan_flag):
+    def update(self, a, P, y, c, d, Z, H, all_nan_flag):
         v = y - Z.dot(a) - d
 
         PZT = P.dot(Z.T)
 
         # If everything is missing, F will be [[0]] and F_chol will raise an error, so add identity to avoid the error
-        F = Z.dot(PZT) + H + pt.eye(y.shape[0]) * all_nan_flag
+        F = Z.dot(PZT) + H + self.eye_endog * all_nan_flag
 
         F_chol = pt.linalg.cholesky(F)
 
@@ -277,7 +299,7 @@ class CholeskyFilter(BaseFilter):
         K = solve_lower_triangular(F_chol.T, solve_lower_triangular(F_chol, PZT.T)).T * (
             1 - all_nan_flag
         )
-        I_KZ = pt.eye(K.shape[0]) - K.dot(Z)
+        I_KZ = self.eye_states - K.dot(Z)
 
         a_filtered = a + K.dot(v)
         P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)
@@ -308,8 +330,7 @@ class SingleTimeseriesFilter(BaseFilter):
 
         return data, a0, P0, c, d, T, Z, R, H, Q
 
-    @staticmethod
-    def update(a, P, y, c, d, Z, H, all_nan_flag):
+    def update(self, a, P, y, c, d, Z, H, all_nan_flag):
         # y, v are scalar, but a might not be
         y_hat = Z.dot(a).ravel() - d
         v = y - y_hat
@@ -320,7 +341,7 @@ class SingleTimeseriesFilter(BaseFilter):
         F = (Z.dot(PZT) + H).ravel() + all_nan_flag
         K = PZT / F
 
-        I_KZ = pt.eye(K.shape[0]) - K.dot(Z)
+        I_KZ = self.eye_states - K.dot(Z)
 
         a_filtered = a + (K * v)
         P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)
@@ -344,6 +365,9 @@ class SteadyStateFilter(BaseFilter):
         """
         Need to override the base step to add an argument to self.update, passing F_inv at every step.
         """
+        self.mode = mode
+        self.initialize_eyes(R, Z)
+
         data, a0, P0, *params = self.check_params(data, a0, P0, c, d, T, Z, R, H, Q)
         sequences, non_sequences, seq_names, non_seq_names = split_vars_into_seq_and_nonseq(
             params, PARAM_NAMES
@@ -359,7 +383,7 @@ class SteadyStateFilter(BaseFilter):
 
         P_steady = solve_discrete_are(T.T, Z.T, matrix_dot(R, Q, R.T), H)
         F = matrix_dot(Z, P_steady, Z.T) + H
-        F_inv = pt.linalg.solve(F, pt.eye(F.shape[0]), assume_a="pos")
+        F_inv = pt.linalg.solve(F, pt.eye(F.shape[0]), assume_a="pos", check_finite=False)
 
         results, updates = pytensor.scan(
             self.kalman_step,
@@ -372,8 +396,7 @@ class SteadyStateFilter(BaseFilter):
 
         return self._postprocess_scan_results(results, a0, P0)
 
-    @staticmethod
-    def update(a, P, c, d, F_inv, y, Z, H, all_nan_flag):
+    def update(self, a, P, c, d, F_inv, y, Z, H, all_nan_flag):
         v = y - Z.dot(a)
 
         PZT = P.dot(Z.T)
@@ -381,7 +404,7 @@ class SteadyStateFilter(BaseFilter):
         F = Z.dot(PZT) + H
         K = PZT.dot(F_inv)
 
-        I_KZ = pt.eye(K.shape[0]) - K.dot(Z)
+        I_KZ = self.eye_states - K.dot(Z)
 
         a_filtered = a + K.dot(v)
         P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)
