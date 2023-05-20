@@ -75,7 +75,9 @@ def test_VARMAX_update_matches_statsmodels(data, order, matrix):
     param_lists = [trend, ar, ma, reg, state_cov, obs_cov] = [
         sm_var.param_names[idx] for idx in param_slices
     ]
-    param_d = {k: np.random.normal() ** 2 for param_list in param_lists for k in param_list}
+    param_d = {
+        k: np.random.normal(scale=0.1) ** 2 for param_list in param_lists for k in param_list
+    }
 
     res = sm_var.fit_constrained(param_d)
 
