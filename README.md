@@ -1,3 +1,7 @@
+# UPDATE
+
+This repo is no longer maintained! Statespace models are now a part of [pymc-experimental](https://github.com/pymc-devs/pymc-experimental/), and are maintained by the PyMC development team. Please look over there for the most up-to-date Bayesian State Space models!
+
 # PyMC StateSpace
 A system for Bayesian estimation of state space models using PyMC 5.0. This package is designed to mirror the functionality of the Statsmodels.api `tsa.statespace` module, except within a Bayesian estimation framework. To accomplish this, PyMC Statespace has a Kalman filter written in Pytensor, allowing the gradients of the iterative Kalman filter likelihood to be computed and provided to the PyMC NUTS sampler.
 
